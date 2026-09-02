@@ -80,5 +80,27 @@ class TestExpertSystem(unittest.TestCase):
         self.assertIn("Timestamp_sin_month", cleaned_df.columns)
         self.assertEqual(report["final_missing_cells"], 0)
 
+        code = generate_python_pipeline_code(facts, inference)
+        self.assertIn("DATETIME_EXPANDED", code)
+        self.assertIn("FrequencyEncoder", code)
+        compile(code, "datalysis_pipeline.py", "exec")
+
+    def test_high_cardinality_frequency_encoding(self):
+        rng = np.random.default_rng(0)
+        cities = [f"city_{i}" for i in range(25)]
+        df = pd.DataFrame({
+            "id": [f"row-{i}" for i in range(80)],
+            "city": rng.choice(cities, size=80),
+            "amount": rng.normal(10, 2, size=80),
+        })
+        facts = extract_dataset_facts(df)
+        inference = run_expert_inference(facts)
+        rec = inference["column_recommendations"]["city"]
+        self.assertEqual(rec["encoding"]["action"], "encode_frequency_or_target")
+        cleaned_df, report = execute_preprocessing_pipeline(df, facts, inference)
+        self.assertEqual(report["final_missing_cells"], 0)
+        self.assertTrue(pd.api.types.is_numeric_dtype(cleaned_df["city"]))
+        self.assertNotIn("id", cleaned_df.columns)
+
 if __name__ == "__main__":
     unittest.main()

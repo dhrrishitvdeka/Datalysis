@@ -150,6 +150,7 @@ export interface AnalysisResponse {
     columns: Record<string, ColumnFact>;
     high_correlation_pairs: CorrelationPair[];
     correlation_matrix: Record<string, Record<string, number>>;
+    missing_corr_pairs?: { feature_a: string; feature_b: string; correlation: number }[];
   };
   inference: {
     health_score: HealthScore;

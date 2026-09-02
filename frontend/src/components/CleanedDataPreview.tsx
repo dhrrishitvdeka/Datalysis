@@ -10,14 +10,16 @@ interface CleanedDataPreviewProps {
 export const CleanedDataPreview: React.FC<CleanedDataPreviewProps> = ({ initialReport }) => {
   const [report, setReport] = useState<CleaningReport | null>(initialReport);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleRunPreprocessing = async () => {
     setLoading(true);
+    setError(null);
     try {
       const res = await executePreprocessing();
       setReport(res);
     } catch (err: any) {
-      alert(`Preprocessing execution failed: ${err.message}`);
+      setError(err.message || 'Preprocessing execution failed.');
     } finally {
       setLoading(false);
     }
@@ -37,7 +39,7 @@ export const CleanedDataPreview: React.FC<CleanedDataPreviewProps> = ({ initialR
             </h3>
           </div>
           <p className="text-xs text-zinc-400">
-            Executes missing value imputation, Winsorization clipping, and One-Hot encoding directly on the dataset.
+            Applies the recipe: drops, imputation (including KNN where recommended), Winsorization, transforms, binary/frequency/one-hot encoding.
           </p>
         </div>
 
@@ -73,6 +75,12 @@ export const CleanedDataPreview: React.FC<CleanedDataPreviewProps> = ({ initialR
         </div>
       </div>
 
+      {error && (
+        <div className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs font-mono">
+          {error}
+        </div>
+      )}
+
       {/* Before / After Stats */}
       {report && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -105,10 +113,12 @@ export const CleanedDataPreview: React.FC<CleanedDataPreviewProps> = ({ initialR
             <div className="flex items-baseline space-x-2 font-mono">
               <span className="text-lg text-rose-400">{report.initial_missing_cells}</span>
               <ArrowRight className="w-3.5 h-3.5 text-zinc-600" />
-              <span className="text-xl font-bold text-emerald-400">0</span>
+              <span className={`text-xl font-bold ${report.final_missing_cells === 0 ? 'text-emerald-400' : 'text-amber-400'}`}>
+                {report.final_missing_cells}
+              </span>
             </div>
-            <p className="text-[10px] font-mono text-emerald-400">
-              100% complete
+            <p className={`text-[10px] font-mono ${report.final_missing_cells === 0 ? 'text-emerald-400' : 'text-amber-400'}`}>
+              {report.final_missing_cells === 0 ? 'Complete' : 'Residual missing cells'}
             </p>
           </div>
         </div>

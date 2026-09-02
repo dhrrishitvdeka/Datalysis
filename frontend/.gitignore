@@ -8,9 +8,9 @@ pnpm-debug.log*
 lerna-debug.log*
 
 node_modules
-dist
 dist-ssr
 *.local
+# `dist/` is committed so FastAPI can serve the SPA without a Node build.
 
 # Editor directories and files
 .vscode/*

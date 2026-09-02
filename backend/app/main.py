@@ -26,7 +26,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -55,8 +55,9 @@ def analyze_and_cache(df: pd.DataFrame, metadata: Dict[str, Any]) -> Dict[str, A
     CURRENT_SESSION["inference"] = inference
     CURRENT_SESSION["pipeline_code"] = pipeline_code
 
-    # Return top 20 rows preview
-    preview_records = df.head(20).fillna("").to_dict(orient="records")
+    # Return first 50 rows; NaN becomes JSON null so missing cells stay visible
+    preview_df = df.head(50).replace([np.inf, -np.inf], np.nan)
+    preview_records = json.loads(preview_df.to_json(orient="records", date_format="iso"))
 
     return {
         "metadata": metadata,
@@ -113,8 +114,10 @@ async def upload_dataset(file: UploadFile = File(...)):
             raise HTTPException(status_code=400, detail="Could not extract any rows from the file.")
         
         return analyze_and_cache(df, metadata)
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to parse file: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"Failed to parse file: {str(e)}")
 
 @app.post("/api/process")
 def execute_cleaning():
@@ -157,7 +160,7 @@ def download_cleaned():
     return StreamingResponse(
         io.BytesIO(csv_bytes),
         media_type="text/csv",
-        headers={"Content-Disposition": f"attachment; filename={out_name}"}
+        headers={"Content-Disposition": f'attachment; filename="{out_name}"'}
     )
 
 @app.get("/api/visualize/scatter")

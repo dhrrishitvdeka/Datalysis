@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { AlertOctagon, BarChart2 } from 'lucide-react';
+import { AlertOctagon } from 'lucide-react';
 import type { ColumnFact, ColumnRecommendation } from '../types';
 
 interface OutlierDistributionProps {

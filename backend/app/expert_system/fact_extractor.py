@@ -65,7 +65,7 @@ def is_likely_identifier(col_name: str, uniqueness_ratio: float, total_rows: int
         return True
     return False
 
-def calculate_histogram(series: pd.Series, bins: int = 10) -> Dict[str, Any]:
+def calculate_histogram(series: pd.Series, bins: int = 20) -> Dict[str, Any]:
     valid = series.dropna().to_numpy()
     if len(valid) == 0:
         return {"bin_edges": [], "counts": []}

@@ -131,7 +131,7 @@ RULES: List[ProductionRule] = [
         description="Recommends a separate 'Missing' level for categoricals with >= 5% missingness.",
         condition=lambda col_fact, ds_fact: (
             5.0 <= col_fact["missing_pct"] < 70.0 and
-            col_fact["inferred_type"] in ["categorical_nominal", "categorical_ordinal", "free_text"]
+            col_fact["inferred_type"] in ["categorical_nominal", "categorical_ordinal", "free_text", "boolean"]
         ),
         action_type="impute_constant",
         generate_recommendation=lambda col_fact, ds_fact: {

@@ -6,7 +6,8 @@
 
   <p>
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square" alt="License" /></a>
-    <img src="https://img.shields.io/badge/Python-3.9%20%7C%203.10%20%7C%203.11-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python Version" />
+    <a href="https://github.com/dhrrishitvdeka/Datalysis/actions/workflows/ci.yml"><img src="https://github.com/dhrrishitvdeka/Datalysis/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+    <img src="https://img.shields.io/badge/Python-3.10%20%7C%203.11%20%7C%203.12-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python Version" />
     <img src="https://img.shields.io/badge/FastAPI-0.115+-009688?style=flat-square&logo=fastapi&logoColor=white" alt="FastAPI" />
     <img src="https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react&logoColor=black" alt="React 19" />
     <img src="https://img.shields.io/badge/Intelligence-100%25%20Deterministic%20(No%20LLM)-emerald?style=flat-square" alt="No LLM" />
@@ -32,6 +33,11 @@ Unlike typical AI tools that rely on cloud APIs, OpenAI/Gemini tokens, or unstab
 ---
 
 ## 🚀 Quick Start
+
+```bash
+git clone https://github.com/dhrrishitvdeka/Datalysis.git
+cd Datalysis
+```
 
 ### 1. Launch with One Click (Recommended)
 Double-click `run.bat` (or run `./start.ps1` in PowerShell):
@@ -129,7 +135,7 @@ Datalysis evaluates production rules across 5 specialized families:
 | Method | Endpoint | Description |
 | :--- | :--- | :--- |
 | `GET` | `/api/health` | Service health status |
-| `GET` | `/api/samples` | List pre-packaged sample datasets (Titanic, Telecom, IoT) |
+| `GET` | `/api/sample-datasets` | List pre-packaged sample datasets (Titanic, Telecom, IoT) |
 | `POST` | `/api/load-sample/{sample_id}` | Load and profile a sample dataset |
 | `POST` | `/api/upload` | Ingest and profile an uploaded tabular file (`multipart/form-data`) |
 | `POST` | `/api/process` | Execute full in-memory preprocessing pipeline |
@@ -170,6 +176,7 @@ Datalysis/
 │   │   ├── components/
 │   │   │   ├── Navbar.tsx              # Sticky header with brandmark & tabs
 │   │   │   ├── UploadZone.tsx          # Drag & drop upload & sample cards
+│   │   │   ├── DatasetOverview.tsx     # Column dictionary and source preview
 │   │   │   ├── HealthScoreCard.tsx     # Health gauge, grade & subscores
 │   │   │   ├── ReasoningTrace.tsx      # Terminal-style cognitive reasoning trace
 │   │   │   ├── DataVisualizer.tsx      # Univariate, Scatter, Grouped, and Sparsity views

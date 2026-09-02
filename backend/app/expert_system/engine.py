@@ -153,10 +153,17 @@ def run_expert_inference(dataset_facts: Dict[str, Any]) -> Dict[str, Any]:
 
                     col_recs.append(rec)
             except Exception as e:
-                pass
+                log_step("RULE_ERROR", f"Rule {rule.rule_id} failed on '{col_name}': {e}")
 
-        # Synthesize consolidated action plan for the column
-        imputation_step = next((r for r in col_recs if r["category"] == "IMPUTATION"), None)
+        # Prefer multivariate imputation over univariate when both fire
+        imputation_candidates = [r for r in col_recs if r["category"] == "IMPUTATION"]
+        imputation_step = next(
+            (r for r in imputation_candidates if r["action"] == "impute_knn_or_iterative"),
+            None,
+        )
+        if imputation_step is None and imputation_candidates:
+            imputation_step = max(imputation_candidates, key=lambda r: r.get("confidence", 0))
+
         encoding_step = next((r for r in col_recs if r["category"] == "ENCODING"), None)
         scaling_steps = [r for r in col_recs if r["category"] == "SCALING_OUTLIERS"]
         filtering_step = next((r for r in col_recs if r["category"] == "FILTERING_LEAKAGE" and r["action"] == "drop_column"), None)

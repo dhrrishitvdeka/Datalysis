@@ -27,7 +27,8 @@ def sniff_delimiter(sample_text: str) -> str:
 
 def detect_encoding(raw_bytes: bytes) -> str:
     """Detects encoding by trying standard encodings."""
-    for enc in ['utf-8', 'utf-8-sig', 'latin1', 'cp1252', 'iso-8859-1']:
+    # latin-1 / iso-8859-1 never raise, so they must be last
+    for enc in ['utf-8', 'utf-8-sig', 'cp1252', 'iso-8859-1', 'latin1']:
         try:
             raw_bytes[:8192].decode(enc)
             return enc

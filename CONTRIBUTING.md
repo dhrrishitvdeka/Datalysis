@@ -9,14 +9,14 @@ We welcome contributions of all kinds: new expert production rules, improved sta
 ## 🛠 Local Development Setup
 
 ### Prerequisites
-- **Python 3.9+** (Python 3.10 or 3.11 recommended)
+- **Python 3.10+** (3.10, 3.11, or 3.12)
 - **Node.js 18+** & **npm** (only required if developing the frontend UI)
 - **Git**
 
 ### 1. Clone the Repository
 ```bash
-git clone https://github.com/your-username/datalysis.git
-cd datalysis
+git clone https://github.com/dhrrishitvdeka/Datalysis.git
+cd Datalysis
 ```
 
 ### 2. Backend Setup

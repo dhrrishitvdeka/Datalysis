@@ -5,9 +5,10 @@ import type { CorrelationPair } from '../types';
 interface CorrelationMatrixProps {
   pairs: CorrelationPair[];
   matrix: Record<string, Record<string, number>>;
+  missingPairs?: { feature_a: string; feature_b: string; correlation: number }[];
 }
 
-export const CorrelationMatrix: React.FC<CorrelationMatrixProps> = ({ pairs, matrix }) => {
+export const CorrelationMatrix: React.FC<CorrelationMatrixProps> = ({ pairs, matrix, missingPairs = [] }) => {
   const columns = Object.keys(matrix);
 
   const getHeatmapColor = (val: number) => {
@@ -21,20 +22,17 @@ export const CorrelationMatrix: React.FC<CorrelationMatrixProps> = ({ pairs, mat
   };
 
   return (
-    <div className="space-y-4">
-      {/* Overview */}
+    <div className="space-y-3">
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-        <div className="lg:col-span-2 p-5 rounded-xl glass-card space-y-3">
+        <div className="lg:col-span-2 p-4 rounded-xl glass-card space-y-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-2">
               <GitFork className="w-4 h-4 text-zinc-400" />
               <h3 className="text-xs font-mono uppercase tracking-wider font-semibold text-zinc-300">
-                Collinearity & Redundancy Warnings
+                Collinear pairs
               </h3>
             </div>
-            <span className="text-[10px] font-mono text-zinc-500">
-              {pairs.length} Pair(s) with |r| ≥ 0.75
-            </span>
+            <span className="text-[10px] font-mono text-zinc-500">{pairs.length} with |r| ≥ 0.75</span>
           </div>
 
           {pairs.length > 0 ? (
@@ -48,18 +46,17 @@ export const CorrelationMatrix: React.FC<CorrelationMatrixProps> = ({ pairs, mat
                       : 'bg-amber-500/10 border-amber-500/20 text-amber-300'
                   }`}
                 >
-                  <div className="flex items-center space-x-2">
+                  <div className="flex items-center space-x-2 min-w-0">
                     <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
-                    <div>
+                    <div className="truncate">
                       <span className="font-semibold text-white">{p.feature_a}</span>
                       <span className="text-zinc-500 mx-1.5">⇄</span>
                       <span className="font-semibold text-white">{p.feature_b}</span>
                     </div>
                   </div>
-
-                  <div className="text-right">
-                    <span className="font-bold">r = {p.correlation}</span>
-                    <span className="text-[10px] text-zinc-500 ml-2 uppercase">({p.severity})</span>
+                  <div className="text-right shrink-0 pl-3">
+                    <span className="font-bold tabular-nums">r = {p.correlation}</span>
+                    <span className="text-[10px] text-zinc-500 ml-2 uppercase">{p.severity}</span>
                   </div>
                 </div>
               ))}
@@ -67,39 +64,47 @@ export const CorrelationMatrix: React.FC<CorrelationMatrixProps> = ({ pairs, mat
           ) : (
             <div className="p-4 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-xs flex items-center space-x-2">
               <CheckCircle2 className="w-4 h-4 flex-shrink-0 text-emerald-400" />
-              <span>No severe multicollinearity detected (|r| &lt; 0.75 across all dimensions).</span>
+              <span>No pairs above |r| 0.75.</span>
             </div>
           )}
         </div>
 
-        {/* Guidance */}
-        <div className="p-5 rounded-xl glass-card space-y-2 text-xs text-zinc-400">
-          <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-500 block">
-            Variance Inflation Note
-          </span>
-          <p className="leading-relaxed font-sans">
-            Features with correlation $|r| \ge 0.85$ inflate standard errors of regression coefficients (VIF penalty). Pruning one redundant feature stabilizes estimator weights.
+        <div className="p-4 rounded-xl glass-card space-y-2 text-xs text-zinc-400">
+          <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-500 block">Note</span>
+          <p className="leading-relaxed">
+            Pairs with |r| ≥ 0.85 inflate coefficient variance in linear models. Drop one of the pair, combine them, or use regularization.
+            This screen uses Pearson correlation, not a full VIF table.
           </p>
+          {missingPairs.length > 0 && (
+            <div className="pt-2 space-y-1.5">
+              <span className="text-[10px] font-mono uppercase tracking-wider text-amber-400/80 block">
+                Co-missing (MAR heuristic)
+              </span>
+              {missingPairs.map((p, i) => (
+                <div key={i} className="text-[11px] font-mono text-zinc-300">
+                  {p.feature_a} ⇄ {p.feature_b} <span className="text-zinc-500">({p.correlation})</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Correlation Matrix Table */}
       {columns.length >= 2 && (
-        <div className="p-5 rounded-xl glass-card space-y-3">
+        <div className="p-4 rounded-xl glass-card space-y-3">
           <div className="flex items-center justify-between">
             <h3 className="text-xs font-mono uppercase tracking-wider font-semibold text-zinc-300">
-              Pearson Cross-Correlation Matrix
+              Pearson matrix
             </h3>
-            <span className="text-[10px] font-mono text-zinc-500">{columns.length} Dimensions</span>
+            <span className="text-[10px] font-mono text-zinc-500">{columns.length} numeric columns</span>
           </div>
-
           <div className="overflow-x-auto">
             <table className="w-full text-center border-collapse text-xs">
               <thead>
                 <tr>
-                  <th className="p-2 text-left text-[10px] text-zinc-600 uppercase font-mono"></th>
+                  <th className="p-2 text-left text-[10px] text-zinc-600 uppercase font-mono sticky left-0 bg-black"></th>
                   {columns.map((col) => (
-                    <th key={col} className="p-2 text-[10px] font-mono text-zinc-400 max-w-[90px] truncate">
+                    <th key={col} className="p-2 text-[10px] font-mono text-zinc-400 max-w-[90px] truncate" title={col}>
                       {col}
                     </th>
                   ))}
@@ -108,7 +113,7 @@ export const CorrelationMatrix: React.FC<CorrelationMatrixProps> = ({ pairs, mat
               <tbody>
                 {columns.map((rCol) => (
                   <tr key={rCol}>
-                    <td className="p-2 text-left font-mono font-medium text-zinc-300 whitespace-nowrap text-[11px] border-r border-white/[0.04]">
+                    <td className="p-2 text-left font-mono font-medium text-zinc-300 whitespace-nowrap text-[11px] border-r border-white/[0.04] sticky left-0 bg-black">
                       {rCol}
                     </td>
                     {columns.map((cCol) => {
@@ -116,7 +121,7 @@ export const CorrelationMatrix: React.FC<CorrelationMatrixProps> = ({ pairs, mat
                       return (
                         <td key={cCol} className="p-0.5">
                           <div
-                            className={`py-1 px-1.5 rounded font-mono text-[10px] transition ${getHeatmapColor(val)}`}
+                            className={`py-1 px-1.5 rounded font-mono text-[10px] tabular-nums ${getHeatmapColor(val)}`}
                             title={`${rCol} vs ${cCol}: ${val}`}
                           >
                             {val.toFixed(2)}

@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { UploadCloud, Database, ArrowRight, ShieldCheck, Cpu, Terminal, Binary } from 'lucide-react';
+import { UploadCloud, ArrowRight, ShieldCheck, Cpu, Terminal } from 'lucide-react';
 import type { SampleDatasetInfo } from '../types';
 
 interface UploadZoneProps {
@@ -54,10 +54,10 @@ export const UploadZone: React.FC<UploadZoneProps> = ({
           <span>Deterministic Expert System • 100% Local Intelligence</span>
         </div>
         <h1 className="text-3xl sm:text-4xl font-semibold tracking-tight text-white">
-          Data Preprocessing & Imputation Diagnostics
+          Profile, diagnose, and clean tabular data
         </h1>
         <p className="text-sm text-zinc-400 max-w-xl mx-auto leading-relaxed">
-          Upload any spreadsheet, CSV, TSV, or tabular file. Evaluates statistical facts, missingness mechanisms, and distribution anomalies using production rules.
+          Load a CSV, Excel, JSON, or Parquet file. Get a column dictionary, missingness and outlier diagnostics, and a runnable scikit-learn pipeline — all local.
         </p>
       </div>
 
@@ -127,7 +127,7 @@ export const UploadZone: React.FC<UploadZoneProps> = ({
             <h4 className="text-xs font-semibold uppercase tracking-wider">Zero LLM Dependencies</h4>
           </div>
           <p className="text-xs text-zinc-500 leading-relaxed">
-            100% deterministic rule base using Tukey's IQR, skewness tests, and Little's MCAR heuristics.
+            Deterministic rules: Tukey IQR, skewness, Pearson collinearity, and co-missing structure. No model API.
           </p>
         </div>
 
