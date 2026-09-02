@@ -26,7 +26,6 @@ src/
 │   ├── RecommendationsTable.tsx# High-density column recipes table with "Inspect" diagnostic modal
 │   ├── OutlierDistribution.tsx # Frequency histograms with Tukey 1.5x IQR boundaries and quartiles
 │   ├── CorrelationMatrix.tsx   # Collinearity warnings and interactive Pearson heatmap matrix
-│   ├── ExpertChat.tsx          # Diagnostic query console for grounded dataset Q&A
 │   ├── CodeExport.tsx          # Standalone Scikit-Learn pipeline.py viewer with copy/download
 │   └── CleanedDataPreview.tsx  # In-memory transformation executor, diff metrics, and cleaned CSV export
 ├── services/

@@ -12,7 +12,6 @@ from scipy import stats as sp_stats
 from .parser import load_file_to_dataframe
 from .expert_system.fact_extractor import extract_dataset_facts
 from .expert_system.engine import run_expert_inference
-from .expert_system.conversational_expert import ConversationalExpert
 from .expert_system.code_generator import generate_python_pipeline_code
 from .preprocessor import execute_preprocessing_pipeline
 from .sample_data import SAMPLE_GENERATORS
@@ -42,9 +41,6 @@ CURRENT_SESSION: Dict[str, Any] = {
     "pipeline_code": None,
     "cleaning_report": None
 }
-
-class ChatQueryRequest(BaseModel):
-    query: str
 
 def analyze_and_cache(df: pd.DataFrame, metadata: Dict[str, Any]) -> Dict[str, Any]:
     facts = extract_dataset_facts(df)
@@ -119,15 +115,6 @@ async def upload_dataset(file: UploadFile = File(...)):
         return analyze_and_cache(df, metadata)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to parse file: {str(e)}")
-
-@app.post("/api/chat")
-def ask_expert(req: ChatQueryRequest):
-    if CURRENT_SESSION["facts"] is None or CURRENT_SESSION["inference"] is None:
-        raise HTTPException(status_code=400, detail="No dataset currently loaded. Please upload or select a sample dataset first.")
-
-    expert = ConversationalExpert(CURRENT_SESSION["facts"], CURRENT_SESSION["inference"])
-    response = expert.answer_query(req.query)
-    return response
 
 @app.post("/api/process")
 def execute_cleaning():

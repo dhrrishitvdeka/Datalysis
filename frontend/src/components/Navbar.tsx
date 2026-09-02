@@ -1,5 +1,5 @@
 import React from 'react';
-import { Database, FileSpreadsheet, RefreshCw, Layers, Table, BarChart2, GitFork, Terminal, Code2, CheckCircle, LineChart } from 'lucide-react';
+import { Database, FileSpreadsheet, RefreshCw, Layers, Table, BarChart2, GitFork, Code2, CheckCircle, LineChart } from 'lucide-react';
 import type { AnalysisResponse } from '../types';
 
 interface NavbarProps {
@@ -32,7 +32,6 @@ export const Navbar: React.FC<NavbarProps> = ({ data, activeTab, setActiveTab, o
     { id: 'recommendations', label: 'Feature Recipes', icon: Table },
     { id: 'distributions', label: 'Distributions', icon: BarChart2 },
     { id: 'correlations', label: 'Collinearity', icon: GitFork },
-    { id: 'chat', label: 'Expert Console', icon: Terminal },
     { id: 'pipeline', label: 'Pipeline Code', icon: Code2 },
     { id: 'cleaned', label: 'Cleaned Data', icon: CheckCircle },
   ];

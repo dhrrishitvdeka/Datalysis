@@ -85,9 +85,8 @@ Datalysis adheres to a strict developer-grade aesthetic inspired by Linear, Verc
 3. **Feature Recipes**: Comprehensive column recommendations table with status badges and an interactive "Inspect" modal revealing all triggered production rules and confidence levels.
 4. **Distributions & Outliers**: Skewness meters, kurtosis, Tukey's 1.5x IQR boundaries, and outlier mitigation strategies (Winsorization, RobustScaler).
 5. **Collinearity & Covariance**: High-correlation alerts ($|r| \ge 0.75$) with variance inflation notes and a full Pearson cross-correlation heatmap matrix.
-6. **Diagnostic Query Console**: Local rule-based command console providing grounded answers to dataset questions with zero LLM hallucinations.
-7. **Pipeline Code**: One-click Scikit-Learn `ColumnTransformer` script synthesis (`pipeline.py`).
-8. **Cleaned Dataset**: In-memory dataset transformer with before/after diff metrics and instant cleaned CSV download ($0$ missing cells).
+6. **Pipeline Code**: One-click Scikit-Learn `ColumnTransformer` script synthesis (`pipeline.py`).
+7. **Cleaned Dataset**: In-memory dataset transformer with before/after diff metrics and instant cleaned CSV download ($0$ missing cells).
 
 ---
 
@@ -133,7 +132,6 @@ Datalysis evaluates production rules across 5 specialized families:
 | `GET` | `/api/samples` | List pre-packaged sample datasets (Titanic, Telecom, IoT) |
 | `POST` | `/api/load-sample/{sample_id}` | Load and profile a sample dataset |
 | `POST` | `/api/upload` | Ingest and profile an uploaded tabular file (`multipart/form-data`) |
-| `POST` | `/api/chat` | Query the deterministic expert assistant (`{"query": "..."}`) |
 | `POST` | `/api/process` | Execute full in-memory preprocessing pipeline |
 | `GET` | `/api/download-cleaned` | Download cleaned dataset as CSV |
 | `GET` | `/api/download-pipeline` | Download generated standalone `pipeline.py` script |
@@ -160,7 +158,6 @@ Datalysis/
 │   │       ├── fact_extractor.py       # Statistical profiling & metadata facts
 │   │       ├── rules.py                # Declarative production rules knowledge base
 │   │       ├── engine.py               # Forward inference engine & Health Scorer (0-100)
-│   │       ├── conversational_expert.py# AI-style deterministic Q&A assistant
 │   │       └── code_generator.py       # Scikit-Learn Pipeline Python code generator
 │   ├── requirements.txt
 │   └── README.md                       # Backend technical documentation
@@ -179,7 +176,6 @@ Datalysis/
 │   │   │   ├── RecommendationsTable.tsx# Per-feature recommendations & "Why?" drawer
 │   │   │   ├── OutlierDistribution.tsx # Interactive histograms & IQR boxplots
 │   │   │   ├── CorrelationMatrix.tsx   # Collinearity warnings & Pearson heatmap
-│   │   │   ├── ExpertChat.tsx          # Diagnostic query command console
 │   │   │   ├── CodeExport.tsx          # Runnable pipeline.py script viewer
 │   │   │   └── CleanedDataPreview.tsx  # In-memory cleaner, diff, and CSV export
 │   │   ├── services/api.ts             # Typed REST client

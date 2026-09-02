@@ -6,7 +6,6 @@ import { ReasoningTrace } from './components/ReasoningTrace';
 import { RecommendationsTable } from './components/RecommendationsTable';
 import { OutlierDistribution } from './components/OutlierDistribution';
 import { CorrelationMatrix } from './components/CorrelationMatrix';
-import { ExpertChat } from './components/ExpertChat';
 import { CodeExport } from './components/CodeExport';
 import { CleanedDataPreview } from './components/CleanedDataPreview';
 import { DatasetOverview } from './components/DatasetOverview';
@@ -61,12 +60,6 @@ export function App() {
     setError(null);
     setActiveTab('overview');
   };
-
-  const firstNumericCol = data
-    ? Object.keys(data.facts.columns).find(
-        (c) => data.facts.columns[c].numeric_stats !== null && data.facts.columns[c].missing_pct > 0
-      ) || Object.keys(data.facts.columns)[0]
-    : undefined;
 
   return (
     <div className="min-h-screen amoled-bg text-zinc-100 flex flex-col selection:bg-zinc-800 selection:text-white">
@@ -146,10 +139,6 @@ export function App() {
                   pairs={data.facts.high_correlation_pairs}
                   matrix={data.facts.correlation_matrix}
                 />
-              )}
-
-              {activeTab === 'chat' && (
-                <ExpertChat initialSuggestedColumn={firstNumericCol} />
               )}
 
               {activeTab === 'pipeline' && (

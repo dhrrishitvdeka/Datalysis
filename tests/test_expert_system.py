@@ -4,7 +4,6 @@ import numpy as np
 
 from backend.app.expert_system.fact_extractor import extract_dataset_facts
 from backend.app.expert_system.engine import run_expert_inference
-from backend.app.expert_system.conversational_expert import ConversationalExpert
 from backend.app.expert_system.code_generator import generate_python_pipeline_code
 from backend.app.sample_data import generate_messy_titanic, generate_messy_telecom_churn, generate_sensor_telemetry
 from backend.app.preprocessor import execute_preprocessing_pipeline
@@ -53,25 +52,14 @@ class TestExpertSystem(unittest.TestCase):
         self.assertNotIn("PassengerId", cleaned_df.columns)
         self.assertNotIn("Cabin", cleaned_df.columns)
 
-    def test_telecom_churn_collinearity_and_expert_chat(self):
+    def test_telecom_churn_collinearity_and_pipeline(self):
         df = generate_messy_telecom_churn(n_rows=150)
         facts = extract_dataset_facts(df)
         inference = run_expert_inference(facts)
 
-        # Check conversational expert
-        chat = ConversationalExpert(facts, inference)
-        
-        # Ask about missing values
-        r1 = chat.answer_query("Which columns have missing data?")
-        self.assertIn("Missing Data Analysis", r1["answer"])
-
-        # Ask why drop CustomerID
-        r2 = chat.answer_query("Why drop CustomerID?")
-        self.assertIn("CustomerID", r2["answer"])
-
-        # Ask about Health Score
-        r3 = chat.answer_query("Explain Health Score")
-        self.assertIn("Score", r3["answer"])
+        # Check collinearity detection
+        self.assertIn("correlation_matrix", facts)
+        self.assertIn("high_correlation_pairs", facts)
 
         # Test pipeline code generation
         code = generate_python_pipeline_code(facts, inference)

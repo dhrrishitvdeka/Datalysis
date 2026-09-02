@@ -16,7 +16,6 @@ backend/app/
     ├── fact_extractor.py       # Heuristic semantic typing, Tukey IQR, skewness, entropy & correlations
     ├── rules.py                # Declarative production rules knowledge base
     ├── engine.py               # Forward inference engine & Multi-criteria Health Scorer (0-100)
-    ├── conversational_expert.py# Deterministic question-answering query engine
     └── code_generator.py       # Standalone Scikit-Learn ColumnTransformer code synthesis
 ```
 
@@ -43,11 +42,7 @@ Extracts comprehensive mathematical and structural facts from tabular data:
 - **Multi-Criteria Health Scorer**: Computes a 0-100 score and letter grade (`A+` to `F`) across Completeness (30%), Distribution Health (25%), Parsimony (25%), and Encoding Readiness (20%).
 - Outputs a timestamped **Cognitive Reasoning Trace** detailing every deduction.
 
-### 4. Deterministic Q&A Console (`conversational_expert.py`)
-- Evaluates user natural-language questions about features, missing values, outliers, collinearity, or health scores against the extracted facts and fired rules.
-- 100% deterministic with zero external LLM API calls, zero latency, and zero hallucinations.
-
-### 5. Scikit-Learn Pipeline Generator (`code_generator.py`)
+### 4. Scikit-Learn Pipeline Generator (`code_generator.py`)
 - Synthesizes a standalone, executable `pipeline.py` script containing:
   - Custom `OutlierCapper` transformer (Winsorization).
   - Preprocessing pipelines for numeric, categorical, and datetime features bundled in a `ColumnTransformer`.

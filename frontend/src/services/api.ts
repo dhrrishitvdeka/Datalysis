@@ -35,21 +35,6 @@ export async function uploadDatasetFile(file: File): Promise<AnalysisResponse> {
   return res.json();
 }
 
-export async function sendChatMessage(query: string): Promise<{ answer: string; suggested_followups: string[] }> {
-  const res = await fetch(`${API_BASE}/chat`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query }),
-  });
-
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: 'Chat error' }));
-    throw new Error(err.detail || 'Chat query failed');
-  }
-
-  return res.json();
-}
-
 export async function executePreprocessing(): Promise<CleaningReport> {
   const res = await fetch(`${API_BASE}/process`, { method: 'POST' });
   if (!res.ok) {

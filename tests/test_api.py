@@ -28,17 +28,6 @@ class TestAPIEndpoints(unittest.TestCase):
         self.assertIn("health_score", data["inference"])
         self.assertEqual(data["metadata"]["filename"], "titanic_sample.csv")
 
-    def test_chat_endpoint(self):
-        # First load sample
-        self.client.post("/api/load-sample/titanic")
-        # Ask question
-        res = self.client.post("/api/chat", json={"query": "Why should I impute Age with median?"})
-        self.assertEqual(res.status_code, 200)
-        json_data = res.json()
-        self.assertIn("answer", json_data)
-        self.assertIn("suggested_followups", json_data)
-        self.assertIn("Age", json_data["answer"])
-
     def test_upload_endpoint(self):
         csv_bytes = b"feature1,feature2,feature3\n1.0,hello,100\n2.5,world,200\n3.1,test,300\n"
         files = {"file": ("test_data.csv", io.BytesIO(csv_bytes), "text/csv")}
