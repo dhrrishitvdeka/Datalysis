@@ -2,7 +2,7 @@
   <img src="assets/logo.png" width="128" height="128" alt="Datalysis Logo" style="border-radius: 24px;" />
   <h1>Datalysis Local Webapp</h1>
   <p><strong>Autonomous Rule-Based Expert System for Tabular Data Analysis, Imputation Diagnostics & ML Preprocessing</strong></p>
-  <p><em>Minimal Modern Glassmorphed AMOLED • 100% Local Deterministic Intelligence • Zero External LLMs</em></p>
+  <p><em>100% Local Deterministic Intelligence • Zero External LLMs</em></p>
 
   <p>
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square" alt="License" /></a>
@@ -17,7 +17,7 @@
 
 ---
 
-## 🌟 Overview
+## Overview
 
 **Datalysis** is a high-performance local web application designed to ingest tabular datasets in any format (CSV, TSV, Excel, JSON, Parquet, Feather), execute comprehensive statistical profiling, and evaluate a built-in **Rule-Based Expert System** to automate the discovery of:
 - **Missingness mechanisms** (MCAR, MAR, MNAR heuristics) and tailored imputation strategies (median, mean, MICE multivariate, categorical tokens).
@@ -32,7 +32,7 @@ Unlike typical AI tools that rely on cloud APIs, OpenAI/Gemini tokens, or unstab
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
 ```bash
 git clone https://github.com/dhrrishitvdeka/Datalysis.git
@@ -57,7 +57,7 @@ python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000 --reload
 
 ---
 
-## 📂 Supported Formats & Parsing
+## Supported Formats & Parsing
 
 | Format | Extensions | Engine | Dialect Handling |
 | :--- | :--- | :--- | :--- |
@@ -70,17 +70,7 @@ python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000 --reload
 
 ---
 
-## 🎨 Design System: AMOLED Glassmorphism (Anti-AI-Slop)
-
-Datalysis adheres to a strict developer-grade aesthetic inspired by Linear, Vercel, and modern industrial design:
-- **Pitch-Black AMOLED Base (`#000000`)**: Zero washed-out blue/slate shades; pure black contrast with a subtle $24\text{px}$ micro-grid dot texture.
-- **Precision Frosted Glass**: Translucent panels (`bg-zinc-950/70`, `backdrop-blur-xl`) with crisp hairline borders (`border-white/[0.08]`) and interior bevel highlights.
-- **Monochrome-First Hierarchy**: Pure white (`#FFFFFF`) headings, cool silver (`#A1A1AA`) metadata, and tabular monospace figures.
-- **Zero AI-Slop Clichés**: No rainbow purple/cyan gradients, no neon glow boxes, and no buzzword badges. Color is strictly functional (muted emerald for healthy, amber for warnings, rose for prunings).
-
----
-
-## 📊 Feature Modules & Tabs
+## Feature Modules & Tabs
 
 1. **Executive Overview**: High-density dataset metrics (row count, feature count, missingness rate, duplicate overlap %, memory footprint, detected delimiter) and raw source matrix table.
 2. **Data Visualizer**: Dedicated interactive analytics section:
@@ -96,7 +86,7 @@ Datalysis adheres to a strict developer-grade aesthetic inspired by Linear, Verc
 
 ---
 
-## 🧠 Expert System Rules Architecture
+## Expert System Rules Architecture
 
 Datalysis evaluates production rules across 5 specialized families:
 
@@ -130,7 +120,7 @@ Datalysis evaluates production rules across 5 specialized families:
 
 ---
 
-## 📡 REST API Reference
+## REST API Reference
 
 | Method | Endpoint | Description |
 | :--- | :--- | :--- |
@@ -148,7 +138,7 @@ Datalysis evaluates production rules across 5 specialized families:
 
 ---
 
-## 🛠 Project Structure
+## Project Structure
 
 ```
 Datalysis/
@@ -172,7 +162,7 @@ Datalysis/
 │   │   └── logo.png                    # Webapp favicon and brandmark
 │   ├── src/
 │   │   ├── App.tsx                     # Main dashboard container & tab router
-│   │   ├── index.css                   # AMOLED glassmorphic design utilities
+│   │   ├── index.css                   # Dark UI design utilities
 │   │   ├── components/
 │   │   │   ├── Navbar.tsx              # Sticky header with brandmark & tabs
 │   │   │   ├── UploadZone.tsx          # Drag & drop upload & sample cards
@@ -203,7 +193,7 @@ Datalysis/
 
 ---
 
-## 🧪 Testing
+## Testing
 
 Run the automated test suite across all parser, expert system, and API integration suites:
 ```powershell
@@ -214,7 +204,7 @@ $env:PYTHONPATH="."
 
 ---
 
-## 🤝 Contributing & Community
+## Contributing & Community
 
 Contributions are warmly welcomed! Please read our [Contributing Guidelines](CONTRIBUTING.md) and [Code of Conduct](CODE_OF_CONDUCT.md).
 
@@ -222,6 +212,6 @@ For security reports, please refer to our [Security Policy](SECURITY.md).
 
 ---
 
-## 📄 License
+## License
 
 Distributed under the **MIT License**. See [`LICENSE`](LICENSE) for details.
