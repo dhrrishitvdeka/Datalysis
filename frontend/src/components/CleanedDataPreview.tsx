@@ -1,23 +1,51 @@
 import React, { useState } from 'react';
-import { Play, Download, CheckCircle2, ArrowRight, Table, FileCheck } from 'lucide-react';
-import type { CleaningReport } from '../types';
-import { executePreprocessing, getCleanedDownloadUrl } from '../services/api';
+import {
+  Play,
+  Download,
+  CheckCircle2,
+  ArrowRight,
+  FileCheck,
+  FileSpreadsheet,
+  Database,
+  BookOpen,
+  Code2,
+  ChevronDown,
+} from 'lucide-react';
+import type { CleaningReport, RecipeOverride } from '../types';
+import {
+  executePreprocessing,
+  getCleanedDownloadUrl,
+  getNotebookDownloadUrl,
+  getSchemaDownloadUrl,
+} from '../services/api';
+import { DataDiffViewer } from './DataDiffViewer';
 
 interface CleanedDataPreviewProps {
   initialReport: CleaningReport | null;
+  rawPreview?: Record<string, any>[];
+  customRecipe?: Record<string, RecipeOverride>;
+  onReportChange?: (report: CleaningReport) => void;
 }
 
-export const CleanedDataPreview: React.FC<CleanedDataPreviewProps> = ({ initialReport }) => {
+export const CleanedDataPreview: React.FC<CleanedDataPreviewProps> = ({
+  initialReport,
+  rawPreview = [],
+  customRecipe = {},
+  onReportChange,
+}) => {
   const [report, setReport] = useState<CleaningReport | null>(initialReport);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
 
   const handleRunPreprocessing = async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await executePreprocessing();
+      const payload = Object.keys(customRecipe).length > 0 ? { column_overrides: customRecipe } : undefined;
+      const res = await executePreprocessing(payload);
       setReport(res);
+      onReportChange?.(res);
     } catch (err: any) {
       setError(err.message || 'Preprocessing execution failed.');
     } finally {
@@ -25,25 +53,28 @@ export const CleanedDataPreview: React.FC<CleanedDataPreviewProps> = ({ initialR
     }
   };
 
-  const columns = report?.preview && report.preview.length > 0 ? Object.keys(report.preview[0]) : [];
-
   return (
     <div className="space-y-4">
-      {/* Action Bar */}
+      {/* Action Header */}
       <div className="p-5 rounded-xl glass-card flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
         <div className="space-y-1">
           <div className="flex items-center space-x-2">
             <FileCheck className="w-4 h-4 text-emerald-400" />
             <h3 className="text-sm font-semibold text-white font-mono">
-              In-Memory Pipeline Execution
+              In-Memory Pipeline Execution & Export
             </h3>
+            {Object.keys(customRecipe).length > 0 && (
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                Custom Recipe Active ({Object.keys(customRecipe).length} overrides)
+              </span>
+            )}
           </div>
           <p className="text-xs text-zinc-400">
-            Applies the recipe: drops, imputation (including KNN where recommended), Winsorization, transforms, binary/frequency/one-hot encoding.
+            Executes full deterministic transformations: column pruning, imputation, Winsorization, power transforms, and feature encoding.
           </p>
         </div>
 
-        <div className="flex items-center space-x-2 w-full sm:w-auto">
+        <div className="flex items-center space-x-2 w-full sm:w-auto relative">
           <button
             onClick={handleRunPreprocessing}
             disabled={loading}
@@ -63,14 +94,79 @@ export const CleanedDataPreview: React.FC<CleanedDataPreviewProps> = ({ initialR
           </button>
 
           {report && (
-            <a
-              href={getCleanedDownloadUrl()}
-              download
-              className="flex-1 sm:flex-none px-3.5 py-1.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 text-zinc-200 text-xs font-medium flex items-center justify-center space-x-1.5 border border-white/[0.08] transition"
-            >
-              <Download className="w-3.5 h-3.5" />
-              <span>Download CSV</span>
-            </a>
+            <div className="relative">
+              <button
+                onClick={() => setExportMenuOpen(!exportMenuOpen)}
+                className="px-3 py-1.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 text-zinc-200 text-xs font-medium flex items-center space-x-1.5 border border-white/[0.08] transition"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Download Dataset</span>
+                <ChevronDown className="w-3 h-3 text-zinc-400" />
+              </button>
+
+              {exportMenuOpen && (
+                <div
+                  className="absolute right-0 mt-1 w-56 rounded-xl bg-zinc-950 border border-white/[0.1] shadow-2xl p-1.5 z-30 space-y-1 font-mono text-xs"
+                  onMouseLeave={() => setExportMenuOpen(false)}
+                >
+                  <a
+                    href={getCleanedDownloadUrl('csv')}
+                    download
+                    onClick={() => setExportMenuOpen(false)}
+                    className="flex items-center space-x-2 px-2.5 py-1.5 rounded-lg hover:bg-zinc-800 text-zinc-300 hover:text-white transition"
+                  >
+                    <Download className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>CSV (.csv)</span>
+                  </a>
+                  <a
+                    href={getCleanedDownloadUrl('excel')}
+                    download
+                    onClick={() => setExportMenuOpen(false)}
+                    className="flex items-center space-x-2 px-2.5 py-1.5 rounded-lg hover:bg-zinc-800 text-zinc-300 hover:text-white transition"
+                  >
+                    <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Excel (.xlsx Multi-Sheet)</span>
+                  </a>
+                  <a
+                    href={getCleanedDownloadUrl('parquet')}
+                    download
+                    onClick={() => setExportMenuOpen(false)}
+                    className="flex items-center space-x-2 px-2.5 py-1.5 rounded-lg hover:bg-zinc-800 text-zinc-300 hover:text-white transition"
+                  >
+                    <Database className="w-3.5 h-3.5 text-blue-400" />
+                    <span>Parquet (.parquet)</span>
+                  </a>
+                  <a
+                    href={getCleanedDownloadUrl('sqlite')}
+                    download
+                    onClick={() => setExportMenuOpen(false)}
+                    className="flex items-center space-x-2 px-2.5 py-1.5 rounded-lg hover:bg-zinc-800 text-zinc-300 hover:text-white transition"
+                  >
+                    <Database className="w-3.5 h-3.5 text-purple-400" />
+                    <span>SQLite Database (.db)</span>
+                  </a>
+                  <div className="h-px bg-white/[0.08] my-1" />
+                  <a
+                    href={getNotebookDownloadUrl()}
+                    download
+                    onClick={() => setExportMenuOpen(false)}
+                    className="flex items-center space-x-2 px-2.5 py-1.5 rounded-lg hover:bg-zinc-800 text-zinc-300 hover:text-white transition"
+                  >
+                    <BookOpen className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Jupyter Notebook (.ipynb)</span>
+                  </a>
+                  <a
+                    href={getSchemaDownloadUrl()}
+                    download
+                    onClick={() => setExportMenuOpen(false)}
+                    className="flex items-center space-x-2 px-2.5 py-1.5 rounded-lg hover:bg-zinc-800 text-zinc-300 hover:text-white transition"
+                  >
+                    <Code2 className="w-3.5 h-3.5 text-indigo-400" />
+                    <span>Pandera Schema (.py)</span>
+                  </a>
+                </div>
+              )}
+            </div>
           )}
         </div>
       </div>
@@ -81,112 +177,41 @@ export const CleanedDataPreview: React.FC<CleanedDataPreviewProps> = ({ initialR
         </div>
       )}
 
-      {/* Before / After Stats */}
-      {report && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <div className="p-4 rounded-xl glass-card space-y-1">
-            <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-500">Row Count</span>
-            <div className="flex items-baseline space-x-2 font-mono">
-              <span className="text-lg text-zinc-500">{report.initial_shape[0]}</span>
-              <ArrowRight className="w-3.5 h-3.5 text-zinc-600" />
-              <span className="text-xl font-bold text-emerald-400">{report.final_shape[0]}</span>
-            </div>
-            <p className="text-[10px] font-mono text-zinc-600">
-              {report.initial_shape[0] - report.final_shape[0]} duplicates dropped
-            </p>
-          </div>
+      {/* Side-by-Side Diff Viewer and Execution Trace */}
+      {report ? (
+        <div className="space-y-4">
+          <DataDiffViewer
+            rawPreview={rawPreview}
+            cleanedPreview={report.preview}
+            report={report}
+          />
 
-          <div className="p-4 rounded-xl glass-card space-y-1">
-            <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-500">Features</span>
-            <div className="flex items-baseline space-x-2 font-mono">
-              <span className="text-lg text-zinc-500">{report.initial_shape[1]}</span>
-              <ArrowRight className="w-3.5 h-3.5 text-zinc-600" />
-              <span className="text-xl font-bold text-white">{report.final_shape[1]}</span>
+          {/* Steps Executed Log */}
+          <div className="p-4 rounded-xl glass-card space-y-2">
+            <h4 className="text-xs font-mono font-semibold uppercase tracking-wider text-zinc-300 flex items-center space-x-2">
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Transformation Steps Executed ({report.steps_executed.length})</span>
+            </h4>
+            <div className="space-y-1.5 text-xs font-mono text-zinc-400 max-h-48 overflow-y-auto pr-2">
+              {report.steps_executed.map((step, idx) => (
+                <div key={idx} className="flex items-start space-x-2">
+                  <span className="text-emerald-400 font-bold shrink-0">✓</span>
+                  <span>{step}</span>
+                </div>
+              ))}
             </div>
-            <p className="text-[10px] font-mono text-zinc-600">
-              Columns after OHE & pruning
-            </p>
-          </div>
-
-          <div className="p-4 rounded-xl glass-card space-y-1">
-            <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-500">Missing Values</span>
-            <div className="flex items-baseline space-x-2 font-mono">
-              <span className="text-lg text-rose-400">{report.initial_missing_cells}</span>
-              <ArrowRight className="w-3.5 h-3.5 text-zinc-600" />
-              <span className={`text-xl font-bold ${report.final_missing_cells === 0 ? 'text-emerald-400' : 'text-amber-400'}`}>
-                {report.final_missing_cells}
-              </span>
-            </div>
-            <p className={`text-[10px] font-mono ${report.final_missing_cells === 0 ? 'text-emerald-400' : 'text-amber-400'}`}>
-              {report.final_missing_cells === 0 ? 'Complete' : 'Residual missing cells'}
-            </p>
           </div>
         </div>
-      )}
-
-      {/* Sequential Execution Log */}
-      {report && (
-        <div className="p-5 rounded-xl glass-card space-y-2.5">
-          <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-500 block">
-            Transformation Operations Applied
-          </span>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-1.5 text-xs font-mono">
-            {report.steps_executed.map((step, idx) => (
-              <div
-                key={idx}
-                className="flex items-center space-x-2 p-2 rounded-lg bg-black/60 border border-white/[0.04] text-zinc-300 text-[11px]"
-              >
-                <CheckCircle2 className="w-3 h-3 text-emerald-400 flex-shrink-0" />
-                <span className="truncate">{step}</span>
-              </div>
-            ))}
+      ) : (
+        <div className="p-12 text-center rounded-xl glass-card space-y-3">
+          <div className="w-12 h-12 rounded-full bg-zinc-900 border border-white/[0.08] flex items-center justify-center mx-auto text-zinc-400">
+            <FileCheck className="w-6 h-6" />
           </div>
-        </div>
-      )}
-
-      {/* Data Preview */}
-      {report && report.preview && (
-        <div className="rounded-xl glass-card overflow-hidden">
-          <div className="p-3 bg-black border-b border-white/[0.06] flex items-center justify-between">
-            <div className="flex items-center space-x-2">
-              <Table className="w-3.5 h-3.5 text-zinc-400" />
-              <span className="text-xs font-mono font-medium text-zinc-300">
-                Cleaned Preview (First 30 Rows)
-              </span>
-            </div>
-            <span className="text-[10px] text-zinc-600 font-mono">
-              {columns.length} Features
-            </span>
-          </div>
-
-          <div className="overflow-x-auto max-h-[460px]">
-            <table className="w-full text-left text-xs border-collapse font-mono">
-              <thead>
-                <tr className="bg-zinc-950 border-b border-white/[0.06] text-zinc-500 text-[10px] sticky top-0 z-10">
-                  <th className="py-2 px-3">#</th>
-                  {columns.map((col) => (
-                    <th key={col} className="py-2 px-3 whitespace-nowrap">
-                      {col}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-white/[0.03] text-zinc-300 text-[11px]">
-                {report.preview.map((row, idx) => (
-                  <tr key={idx} className="hover:bg-zinc-900/40">
-                    <td className="py-1.5 px-3 text-zinc-600 select-none text-[10px]">{idx + 1}</td>
-                    {columns.map((col) => (
-                      <td key={col} className="py-1.5 px-3 whitespace-nowrap">
-                        {typeof row[col] === 'number'
-                          ? Number(row[col]).toFixed(3).replace(/\.?0+$/, '')
-                          : String(row[col] ?? '')}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="space-y-1">
+            <h4 className="text-sm font-semibold text-zinc-200 font-mono">Ready to Clean Dataset</h4>
+            <p className="text-xs text-zinc-500 max-w-md mx-auto">
+              Click "Run Preprocessing" above to execute the automated expert rules and generate the cleaned matrix with side-by-side diff.
+            </p>
           </div>
         </div>
       )}

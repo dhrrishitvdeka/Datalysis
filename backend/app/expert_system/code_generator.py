@@ -8,7 +8,7 @@ def generate_python_pipeline_code(dataset_facts: Dict[str, Any], inference_resul
     col_recs = inference_results.get("column_recommendations", {})
     cols = dataset_facts.get("columns", {})
 
-    drop_cols = [c for c, r in col_recs.items() if r["should_drop"]]
+    drop_cols = [c for c, r in col_recs.items() if r.get("should_drop")]
 
     num_median_robust = []
     num_mean_standard = []
@@ -19,7 +19,7 @@ def generate_python_pipeline_code(dataset_facts: Dict[str, Any], inference_resul
     binary_cols = []
 
     for col, r in col_recs.items():
-        if r["should_drop"]:
+        if r.get("should_drop"):
             continue
 
         c_fact = cols.get(col, {})
@@ -48,7 +48,13 @@ def generate_python_pipeline_code(dataset_facts: Dict[str, Any], inference_resul
         else:
             cat_ohe.append(col)
 
+    # Compute passthrough columns (columns that exist, are not dropped, and not transformed)
+    all_known_cols = list(cols.keys())
+    transformed_cols = set(num_median_robust + num_mean_standard + num_log1p + cat_ohe + cat_freq + binary_cols + drop_cols + datetime_cols)
+    passthrough_cols = [c for c in all_known_cols if c not in transformed_cols]
+
     datetime_expanded: List[str] = []
+    datetime_time_cols: List[str] = []
     for col in datetime_cols:
         datetime_expanded.extend(
             [
@@ -61,6 +67,19 @@ def generate_python_pipeline_code(dataset_facts: Dict[str, Any], inference_resul
                 f"{col}_cos_month",
             ]
         )
+        c_fact = cols.get(col, {})
+        has_time = c_fact.get("datetime_stats", {}).get("has_time", False)
+        if has_time:
+            datetime_time_cols.append(col)
+            datetime_expanded.extend(
+                [
+                    f"{col}_hour",
+                    f"{col}_sin_hour",
+                    f"{col}_cos_hour",
+                    f"{col}_is_night",
+                    f"{col}_minute",
+                ]
+            )
 
     code = f'''"""
 =============================================================================
@@ -71,7 +90,7 @@ Generated automatically from mathematical heuristics & rule inference.
 
 import numpy as np
 import pandas as pd
-from sklearn.base import BaseEstimator, TransformerMixin
+from sklearn.base import BaseEstimator, TransformerMixin, OneToOneFeatureMixin
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
 from sklearn.impute import SimpleImputer
@@ -82,8 +101,9 @@ from sklearn.preprocessing import StandardScaler, RobustScaler, OneHotEncoder, F
 # 1. Custom Datetime Feature Extractor
 # ---------------------------------------------------------------------------
 class DatetimeFeatureExtractor(BaseEstimator, TransformerMixin):
-    def __init__(self, datetime_cols):
+    def __init__(self, datetime_cols, time_cols=None):
         self.datetime_cols = datetime_cols
+        self.time_cols = time_cols if time_cols is not None else {repr(datetime_time_cols)}
 
     def fit(self, X, y=None):
         return self
@@ -92,20 +112,28 @@ class DatetimeFeatureExtractor(BaseEstimator, TransformerMixin):
         X_out = pd.DataFrame(index=X.index)
         for col in self.datetime_cols:
             dt = pd.to_datetime(X[col], errors='coerce')
-            X_out[f"{{col}}_year"] = dt.dt.year
-            X_out[f"{{col}}_month"] = dt.dt.month
-            X_out[f"{{col}}_day"] = dt.dt.day
-            X_out[f"{{col}}_dayofweek"] = dt.dt.dayofweek
+            month = dt.dt.month.fillna(1).astype(int)
+            X_out[f"{{col}}_year"] = dt.dt.year.fillna(2000).astype(int)
+            X_out[f"{{col}}_month"] = month
+            X_out[f"{{col}}_day"] = dt.dt.day.fillna(1).astype(int)
+            X_out[f"{{col}}_dayofweek"] = dt.dt.dayofweek.fillna(0).astype(int)
             X_out[f"{{col}}_is_weekend"] = dt.dt.dayofweek.isin([5, 6]).astype(int)
-            X_out[f"{{col}}_sin_month"] = np.sin(2 * np.pi * dt.dt.month / 12.0)
-            X_out[f"{{col}}_cos_month"] = np.cos(2 * np.pi * dt.dt.month / 12.0)
+            X_out[f"{{col}}_sin_month"] = np.sin(2 * np.pi * month / 12.0)
+            X_out[f"{{col}}_cos_month"] = np.cos(2 * np.pi * month / 12.0)
+            if col in self.time_cols:
+                hour = dt.dt.hour.fillna(0).astype(int)
+                X_out[f"{{col}}_hour"] = hour
+                X_out[f"{{col}}_sin_hour"] = np.sin(2 * np.pi * hour / 24.0)
+                X_out[f"{{col}}_cos_hour"] = np.cos(2 * np.pi * hour / 24.0)
+                X_out[f"{{col}}_is_night"] = ((hour < 6) | (hour > 20)).astype(int)
+                X_out[f"{{col}}_minute"] = dt.dt.minute.fillna(0).astype(int)
         return X_out.fillna(0)
 
 
 # ---------------------------------------------------------------------------
 # 2. Winsorization Outlier Clipper
 # ---------------------------------------------------------------------------
-class OutlierCapper(BaseEstimator, TransformerMixin):
+class OutlierCapper(OneToOneFeatureMixin, BaseEstimator, TransformerMixin):
     def __init__(self, lower_quantile=0.01, upper_quantile=0.99):
         self.lower_quantile = lower_quantile
         self.upper_quantile = upper_quantile
@@ -113,6 +141,9 @@ class OutlierCapper(BaseEstimator, TransformerMixin):
 
     def fit(self, X, y=None):
         X_df = pd.DataFrame(X)
+        self.n_features_in_ = X_df.shape[1]
+        if hasattr(X_df, 'columns'):
+            self.feature_names_in_ = np.array(X_df.columns, dtype=object)
         for col in X_df.columns:
             q_low = X_df[col].quantile(self.lower_quantile)
             q_high = X_df[col].quantile(self.upper_quantile)
@@ -122,16 +153,20 @@ class OutlierCapper(BaseEstimator, TransformerMixin):
     def transform(self, X):
         X_df = pd.DataFrame(X).copy()
         for col, (q_low, q_high) in self.bounds_.items():
-            X_df[col] = np.clip(X_df[col], q_low, q_high)
+            if col in X_df.columns:
+                X_df[col] = np.clip(X_df[col], q_low, q_high)
         return X_df.to_numpy()
 
 
 # ---------------------------------------------------------------------------
 # 3. Frequency Encoder (high-cardinality categoricals)
 # ---------------------------------------------------------------------------
-class FrequencyEncoder(BaseEstimator, TransformerMixin):
+class FrequencyEncoder(OneToOneFeatureMixin, BaseEstimator, TransformerMixin):
     def fit(self, X, y=None):
         X_df = pd.DataFrame(X)
+        self.n_features_in_ = X_df.shape[1]
+        if hasattr(X_df, 'columns'):
+            self.feature_names_in_ = np.array(X_df.columns, dtype=object)
         self.maps_ = {{}}
         for col in X_df.columns:
             self.maps_[col] = X_df[col].value_counts(normalize=True).to_dict()
@@ -140,7 +175,8 @@ class FrequencyEncoder(BaseEstimator, TransformerMixin):
     def transform(self, X):
         X_df = pd.DataFrame(X).copy()
         for col, mapping in self.maps_.items():
-            X_df[col] = X_df[col].map(mapping).fillna(0.0)
+            if col in X_df.columns:
+                X_df[col] = X_df[col].map(mapping).fillna(0.0)
         return X_df.to_numpy()
 
 
@@ -156,6 +192,7 @@ CATEGORICAL_HIGH_CARD = {repr(cat_freq)}
 DATETIME_COLUMNS = {repr(datetime_cols)}
 DATETIME_EXPANDED = {repr(datetime_expanded)}
 BINARY_COLUMNS = {repr(binary_cols)}
+PASSTHROUGH_COLUMNS = {repr(passthrough_cols)}
 
 
 # ---------------------------------------------------------------------------
@@ -168,7 +205,7 @@ def build_preprocessing_pipeline() -> ColumnTransformer:
         log1p_pipe = Pipeline([
             ("imputer", SimpleImputer(strategy="median", add_indicator=True)),
             ("capper", OutlierCapper(lower_quantile=0.01, upper_quantile=0.99)),
-            ("log1p", FunctionTransformer(np.log1p, validate=False)),
+            ("log1p", FunctionTransformer(np.log1p, validate=False, feature_names_out="one-to-one")),
             ("scaler", RobustScaler())
         ])
         transformers.append(("num_log1p", log1p_pipe, NUMERIC_LOG1P))
@@ -216,14 +253,23 @@ def build_preprocessing_pipeline() -> ColumnTransformer:
         ])
         transformers.append(("binary", bin_pipe, BINARY_COLUMNS))
 
+    if PASSTHROUGH_COLUMNS:
+        transformers.append(("passthrough", "passthrough", PASSTHROUGH_COLUMNS))
+
     preprocessor = ColumnTransformer(
         transformers=transformers,
-        remainder="drop"
+        remainder="passthrough"
     )
+
+    try:
+        preprocessor.set_output(transform="pandas")
+    except Exception:
+        pass
+
     return preprocessor
 
 
-def clean_and_transform(df: pd.DataFrame) -> pd.DataFrame:
+def clean_and_transform(df: pd.DataFrame):
     """Convenience helper to apply end-to-end cleaning to raw pandas DataFrame."""
     initial_rows = len(df)
     df_clean = df.drop_duplicates().copy()
@@ -241,10 +287,22 @@ def clean_and_transform(df: pd.DataFrame) -> pd.DataFrame:
             df_clean = pd.concat([df_clean.drop(columns=present_dt), dt_features], axis=1)
 
     preprocessor = build_preprocessing_pipeline()
-    feature_matrix = preprocessor.fit_transform(df_clean)
+    try:
+        feature_matrix = preprocessor.fit_transform(df_clean)
+    except Exception:
+        feature_matrix = preprocessor.fit_transform(df_clean)
 
-    print(f"Final Preprocessed Matrix Shape: {{feature_matrix.shape}}")
-    return feature_matrix
+    if isinstance(feature_matrix, pd.DataFrame):
+        print(f"Final Preprocessed DataFrame Shape: {{feature_matrix.shape}}")
+        return feature_matrix
+    else:
+        try:
+            col_names = preprocessor.get_feature_names_out()
+            out_df = pd.DataFrame(feature_matrix, columns=col_names, index=df_clean.index)
+        except Exception:
+            out_df = pd.DataFrame(feature_matrix, index=df_clean.index)
+        print(f"Final Preprocessed DataFrame Shape: {{out_df.shape}}")
+        return out_df
 
 
 if __name__ == "__main__":
@@ -255,6 +313,7 @@ if __name__ == "__main__":
     print(f"Gaussian Features: {{len(NUMERIC_MEAN_STANDARD)}}")
     print(f"Categorical Features: {{len(CATEGORICAL_OHE)}}")
     print(f"High-cardinality Features: {{len(CATEGORICAL_HIGH_CARD)}}")
+    print(f"Passthrough Unflagged Features: {{len(PASSTHROUGH_COLUMNS)}}")
     print("Call `clean_and_transform(df)` with your pandas DataFrame to run.")
 '''
     return code

@@ -2,16 +2,16 @@
   <img src="assets/logo.png" width="128" height="128" alt="Datalysis Logo" style="border-radius: 24px;" />
   <h1>Datalysis Local Webapp</h1>
   <p><strong>Autonomous Rule-Based Expert System for Tabular Data Analysis, Imputation Diagnostics & ML Preprocessing</strong></p>
-  <p><em>100% Local Deterministic Intelligence • Zero External LLMs</em></p>
+  <p><em>100% Local Deterministic Intelligence • Zero External LLMs • Multi-Tenant Session Isolation</em></p>
 
   <p>
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square" alt="License" /></a>
     <a href="https://github.com/dhrrishitvdeka/Datalysis/actions/workflows/ci.yml"><img src="https://github.com/dhrrishitvdeka/Datalysis/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
-    <img src="https://img.shields.io/badge/Python-3.10%20%7C%203.11%20%7C%203.12-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python Version" />
+    <img src="https://img.shields.io/badge/Python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python Version" />
     <img src="https://img.shields.io/badge/FastAPI-0.115+-009688?style=flat-square&logo=fastapi&logoColor=white" alt="FastAPI" />
     <img src="https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react&logoColor=black" alt="React 19" />
-    <img src="https://img.shields.io/badge/Intelligence-100%25%20Deterministic%20(No%20LLM)-emerald?style=flat-square" alt="No LLM" />
-    <img src="https://img.shields.io/badge/Tests-15%20Passed-brightgreen?style=flat-square" alt="Tests" />
+    <img src="https://img.shields.io/badge/Docker-Ready-2496ED?style=flat-square&logo=docker&logoColor=white" alt="Docker" />
+    <img src="https://img.shields.io/badge/Tests-41%20Passed-brightgreen?style=flat-square" alt="Tests" />
   </p>
 </div>
 
@@ -19,16 +19,18 @@
 
 ## Overview
 
-**Datalysis** is a high-performance local web application designed to ingest tabular datasets in any format (CSV, TSV, Excel, JSON, Parquet, Feather), execute comprehensive statistical profiling, and evaluate a built-in **Rule-Based Expert System** to automate the discovery of:
-- **Missingness mechanisms** (MCAR, MAR, MNAR heuristics) and tailored imputation strategies (median, mean, MICE multivariate, categorical tokens).
-- **Outlier leverage & heavy skewness** (1.5x IQR boundaries, Winsorization capping, Log1p/Yeo-Johnson power transformations).
-- **Categorical encoding** (One-Hot Encoding, Binary mapping, Ordinal hierarchies, High-cardinality Target/Frequency encoding).
-- **Multicollinearity & Variance Inflation (VIF)** (Pearson cross-correlation matrix with redundancy alerts).
-- **Data leakage & uninformative features** (zero-variance constant elimination, primary key / UUID identification).
-- **Datetime engineering** (cyclical sine/cosine decompositions and calendar feature extraction).
-- **Interactive vector visualizations** (Univariate histograms with IQR bounds, 2D scatter plots with automated linear regression trendlines, grouped categorical bars, and missingness sparsity matrices).
+**Datalysis** is an open-source, high-performance local web application and CLI designed to ingest tabular datasets in any format (CSV, TSV, Excel, JSON, Parquet, Feather), execute comprehensive statistical profiling, and evaluate a built-in **Rule-Based Expert System** to automate discovery, diagnostic analysis, and preprocessing:
 
-Unlike typical AI tools that rely on cloud APIs, OpenAI/Gemini tokens, or unstable internet connections, Datalysis runs on an **internal mathematical production rule base** and **deterministic inference engine**, delivering instant explanations, cognitive reasoning audit logs, and runnable Scikit-Learn pipeline code.
+- **Missingness Mechanisms & Strategy**: Evaluates null rates and correlations to recommend median, mean, mode, KNN, or explicit categorical missing tokens.
+- **Interactive Recipe Customizer**: Full interactive user override of cleaning decisions per column (toggle drops, switch imputation methods, customize outlier bounds, select encodings).
+- **Side-by-Side Data Diff Viewer**: Visually compare raw source rows against cleaned records with color-coded badges highlighting imputed cells, clipped outliers, and encoded columns.
+- **Supervised Target Mode**: Designate a target feature to automatically detect task type (Binary Classification, Multi-class, Regression), inspect class imbalance, compute Mutual Information feature ranking, and check for target leakage.
+- **Multi-Format Export**: Download cleaned datasets in **CSV**, **Excel (`.xlsx`)**, **Parquet (`.parquet`)**, or **SQLite (`.db`)**.
+- **Jupyter Notebook & Data Assertions Export**: Export runnable **Jupyter Notebooks (`.ipynb`)** and **Pandera (`.py`)** schema quality assertion suites.
+- **Outlier Leverage & Skewness**: Tukey 1.5x IQR cutoffs, Winsorization capping, and Log1p/Yeo-Johnson power transformations.
+- **Collinearity & Covariance**: High-correlation alerts ($|r| \ge 0.75$) with variance inflation notes and a full Pearson cross-correlation heatmap matrix.
+- **Multi-User Session Isolation**: Thread-safe `SessionStore` with UUID tokens, LRU cache, and TTL expiration for secure concurrent usage.
+- **Dark, Light & System Themes**: Modern UI supporting Dark AMOLED, Clean Modern Light, and System themes with accessible WCAG AA contrast.
 
 ---
 
@@ -39,54 +41,78 @@ git clone https://github.com/dhrrishitvdeka/Datalysis.git
 cd Datalysis
 ```
 
-### 1. Launch with One Click (Recommended)
-Double-click `run.bat` (or run `./start.ps1` in PowerShell):
-```powershell
-.\start.ps1
-```
-This automatically initializes the environment, boots the FastAPI server, and opens `http://127.0.0.1:8000` in your default browser.
+### 1. One-Click Launch
+- **Windows**: Double-click `run.bat` or run:
+  ```powershell
+  .\start.ps1
+  ```
+- **macOS / Linux**:
+  ```bash
+  ./start.sh
+  ```
+- **Makefile**:
+  ```bash
+  make dev
+  ```
 
-### 2. Manual Command Line
+### 2. Using the Datalysis CLI
+Install in editable mode and run directly:
 ```bash
-# 1. Activate virtual environment
-.\.venv\Scripts\activate
+pip install -e .
 
-# 2. Run backend (serves both REST API and compiled React SPA)
-python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8000 --reload
+# Launch local webapp
+datalysis launch --port 8000
+
+# Or run headless local audit on any tabular file
+datalysis audit dataset.csv --output report.json
+```
+
+### 3. Using Docker
+```bash
+docker compose up -d
+# Access at http://localhost:8000
 ```
 
 ---
 
-## Supported Formats & Parsing
+## Supported Ingestion & Export Formats
 
-| Format | Extensions | Engine | Dialect Handling |
-| :--- | :--- | :--- | :--- |
-| **CSV** | `.csv`, `.txt` | Sniffer + Pandas | Sniffs `,`, `;`, `\|`, auto-detects UTF-8/Latin-1/CP1252 |
-| **TSV / Tab** | `.tsv`, `.tab` | Tab Sniffer | Tab-delimited parsing with robust fallback handling |
-| **Excel** | `.xlsx`, `.xls` | OpenPyXL | Sheet auto-detection and multi-sheet metadata |
-| **JSON** | `.json`, `.jsonl`, `.ndjson` | Python JSON | Records, split, lines, nested objects |
-| **Parquet** | `.parquet`, `.pqt` | PyArrow | High-performance binary columnar format |
-| **Feather** | `.feather`, `.arrow` | PyArrow | Zero-copy Arrow IPC tables |
+| Format | File Extensions | Read Support | Export Support |
+| :--- | :--- | :---: | :---: |
+| **CSV** | `.csv`, `.txt` | Sniffer + Pandas (auto-delimiter, UTF-8/Latin-1) | Standard CSV |
+| **TSV / Tab** | `.tsv`, `.tab` | Tab Sniffer & Delimiter Detection | Tab-delimited CSV |
+| **Excel** | `.xlsx`, `.xls` | OpenPyXL multi-sheet reader | Multi-sheet workbook (`Cleaned_Data`, `Summary_Overview`, `Column_Schema`) |
+| **Parquet** | `.parquet`, `.pqt` | PyArrow binary columnar format | Optimized PyArrow binary |
+| **SQLite Database**| `.db`, `.sqlite` | SQLite3 engine | Self-contained SQLite database file |
+| **JSON / JSONL** | `.json`, `.jsonl`, `.ndjson` | Python JSON (records, split, lines) | Audit JSON report |
+| **Jupyter Notebook**| `.ipynb` | — | Runnable Jupyter Notebook with EDA & modeling starter |
+| **Pandera Schema**| `.py` | — | Executable data quality schema assertions |
 
 ---
 
-## Feature Modules & Tabs
+## Core Modules & Capabilities
 
-1. **Executive Overview**: High-density dataset metrics (row count, feature count, missingness rate, duplicate overlap %, memory footprint, detected delimiter) and raw source matrix table.
-2. **Data Visualizer**: Dedicated interactive analytics section:
+1. **Executive Overview**: High-density dataset metrics (row count, feature count, missingness rate, duplicate overlap %, memory footprint, detected delimiter), type filter pills, column dictionary, and source preview.
+2. **Interactive Recipe Customizer**: Full user control over the automated recipe:
+   - Toggle column retention/drop.
+   - Choose imputation: Auto, Median, Mean, Mode, Constant, KNN, or Drop Rows.
+   - Outlier mitigation: Auto, Winsorization, Clip IQR, Z-score, or None.
+   - Categorical encoding: Auto, One-Hot, Frequency, Ordinal, Binary, or None.
+   - Decoupled scaling: Standard (Z-score), Robust, Log1p, or None.
+3. **Data Diff Inspector**: Interactive side-by-side comparison of raw vs cleaned records with highlighted badges for transformed values.
+4. **Supervised Target Mode**: One-click target feature selection providing task auto-detection, class imbalance breakdown, Mutual Information importance charts, and normalized entropy target leakage alerts.
+5. **Data Visualizer**:
    - **Feature Profiler (Univariate)**: Interactive SVG histograms with hover tooltips, 5-point quartile cards, and categorical Pareto frequency bars.
-   - **Bivariate Scatter & Trendline**: Interactive 2D scatter explorer with color hue grouping, point coordinates on hover, automated linear regression trendline, and Pearson $r$ / $R^2$ statistics.
+   - **Bivariate Scatter & Trendline**: 2D scatter explorer with color hue grouping, point coordinates on hover, automated linear regression trendlines, and Pearson $r$ / $R^2$ statistics.
    - **Category vs Metric (Grouped)**: Mean and spread bar charts comparing continuous metrics across categorical levels.
-   - **Sparsity Matrix**: Visual null distribution grid displaying missing value clustering along dataset rows.
-3. **Feature Recipes**: Comprehensive column recommendations table with status badges and an interactive "Inspect" modal revealing all triggered production rules and confidence levels.
-4. **Distributions & Outliers**: Skewness meters, kurtosis, Tukey's 1.5x IQR boundaries, and outlier mitigation strategies (Winsorization, RobustScaler).
-5. **Collinearity & Covariance**: High-correlation alerts ($|r| \ge 0.75$) with variance inflation notes and a full Pearson cross-correlation heatmap matrix.
-6. **Pipeline Code**: One-click Scikit-Learn `ColumnTransformer` script synthesis (`pipeline.py`).
-7. **Cleaned Dataset**: In-memory dataset transformer with before/after diff metrics and instant cleaned CSV download ($0$ missing cells).
+   - **Sparsity Grid**: Visual null distribution grid displaying missing value clustering along dataset row slices.
+6. **Distributions & Outliers**: Skewness meters, kurtosis, Tukey's 1.5x IQR boundaries, and outlier mitigation strategies.
+7. **Collinearity & Covariance**: High-correlation alerts ($|r| \ge 0.75$) with variance inflation notes and a full Pearson cross-correlation heatmap matrix.
+8. **Pipeline Code Generator**: Generates clean, production-ready Scikit-Learn `ColumnTransformer` script (`pipeline.py`) preserving untransformed features via passthrough.
 
 ---
 
-## Expert System Rules Architecture
+## Expert System Rules Database
 
 Datalysis evaluates production rules across 5 specialized families:
 
@@ -116,7 +142,7 @@ Datalysis evaluates production rules across 5 specialized families:
 - **`R-FLT-03`**: Pairwise Pearson correlations $|r| \ge 0.85$ generate multicollinearity redundancy warnings.
 
 ### 5. Datetime Engineering (`R-DAT`)
-- **`R-DAT-01`**: Decomposes timestamps into `year`, `month`, `day`, `day_of_week`, `is_weekend`, and cyclical trigonometric components ($\sin(2\pi m/12)$ and $\cos(2\pi m/12)$).
+- **`R-DAT-01`**: Decomposes timestamps into `year`, `month`, `day`, `day_of_week`, `is_weekend`, `hour`, `minute`, and cyclical trigonometric components ($\sin(2\pi m/12)$ and $\cos(2\pi m/12)$).
 
 ---
 
@@ -128,9 +154,12 @@ Datalysis evaluates production rules across 5 specialized families:
 | `GET` | `/api/sample-datasets` | List pre-packaged sample datasets (Titanic, Telecom, IoT) |
 | `POST` | `/api/load-sample/{sample_id}` | Load and profile a sample dataset |
 | `POST` | `/api/upload` | Ingest and profile an uploaded tabular file (`multipart/form-data`) |
-| `POST` | `/api/process` | Execute full in-memory preprocessing pipeline |
-| `GET` | `/api/download-cleaned` | Download cleaned dataset as CSV |
+| `POST` | `/api/process` | Execute full in-memory preprocessing pipeline with optional custom recipe |
+| `POST` | `/api/set-target` | Run supervised analysis on target column (leakage, imbalance, mutual information) |
+| `GET` | `/api/download-cleaned` | Download cleaned dataset (`?format=csv|excel|parquet|sqlite`) |
 | `GET` | `/api/download-pipeline` | Download generated standalone `pipeline.py` script |
+| `GET` | `/api/download-notebook` | Download runnable Jupyter Notebook (`.ipynb`) |
+| `GET` | `/api/download-pandera-schema` | Download Pandera data quality assertion script (`.py`) |
 | `GET` | `/api/download-report` | Download JSON audit report |
 | `GET` | `/api/visualize/scatter` | Fetch scatter points & regression stats (`x`, `y`, optional `hue`) |
 | `GET` | `/api/visualize/grouped` | Fetch grouped aggregations (`cat`, `num`) |
@@ -147,47 +176,66 @@ Datalysis/
 ├── backend/
 │   ├── app/
 │   │   ├── main.py                     # FastAPI application & REST endpoints
+│   │   ├── session.py                  # Thread-safe multi-user SessionStore (LRU + TTL)
+│   │   ├── schemas.py                  # Strict Pydantic v2 request & response models
 │   │   ├── parser.py                   # Multi-format tabular file reader
-│   │   ├── sample_data.py              # Realistic sample datasets (Titanic, Churn, IoT)
-│   │   ├── preprocessor.py             # In-memory transformation & cleaning engine
+│   │   ├── sample_data.py              # Sample datasets (Titanic, Churn, IoT)
+│   │   ├── preprocessor.py             # Transformation engine with custom recipe support
+│   │   ├── exporter.py                 # Multi-format exporter (CSV, Excel, Parquet, SQLite, Notebook)
+│   │   ├── supervised.py               # Supervised mode (Mutual info, imbalance, leakage)
+│   │   ├── cli.py                      # CLI entrypoint for `datalysis launch` & `datalysis audit`
 │   │   └── expert_system/
 │   │       ├── fact_extractor.py       # Statistical profiling & metadata facts
 │   │       ├── rules.py                # Declarative production rules knowledge base
 │   │       ├── engine.py               # Forward inference engine & Health Scorer (0-100)
-│   │       └── code_generator.py       # Scikit-Learn Pipeline Python code generator
+│   │       └── code_generator.py       # Scikit-Learn Pipeline code generator
 │   ├── requirements.txt
-│   └── README.md                       # Backend technical documentation
+│   └── README.md
 ├── frontend/
 │   ├── public/
 │   │   └── logo.png                    # Webapp favicon and brandmark
 │   ├── src/
 │   │   ├── App.tsx                     # Main dashboard container & tab router
-│   │   ├── index.css                   # Dark UI design utilities
+│   │   ├── index.css                   # Theme styling (Dark AMOLED, Light, System)
+│   │   ├── context/
+│   │   │   └── ThemeContext.tsx        # React Theme Provider
 │   │   ├── components/
-│   │   │   ├── Navbar.tsx              # Sticky header with brandmark & tabs
+│   │   │   ├── Navbar.tsx              # Sticky header with brandmark, tabs & theme toggle
 │   │   │   ├── UploadZone.tsx          # Drag & drop upload & sample cards
 │   │   │   ├── DatasetOverview.tsx     # Column dictionary and source preview
 │   │   │   ├── HealthScoreCard.tsx     # Health gauge, grade & subscores
 │   │   │   ├── ReasoningTrace.tsx      # Terminal-style cognitive reasoning trace
 │   │   │   ├── DataVisualizer.tsx      # Univariate, Scatter, Grouped, and Sparsity views
-│   │   │   ├── RecommendationsTable.tsx# Per-feature recommendations & "Why?" drawer
+│   │   │   ├── RecommendationsTable.tsx# Recommendations viewer & recipe trigger
+│   │   │   ├── RecipeCustomizer.tsx    # Interactive recipe override editor
+│   │   │   ├── DataDiffViewer.tsx      # Side-by-side raw vs cleaned diff inspector
+│   │   │   ├── SupervisedTargetModal.tsx# Supervised ML target selection & leakage viewer
 │   │   │   ├── OutlierDistribution.tsx # Interactive histograms & IQR boxplots
 │   │   │   ├── CorrelationMatrix.tsx   # Collinearity warnings & Pearson heatmap
 │   │   │   ├── CodeExport.tsx          # Runnable pipeline.py script viewer
-│   │   │   └── CleanedDataPreview.tsx  # In-memory cleaner, diff, and CSV export
-│   │   ├── services/api.ts             # Typed REST client
+│   │   │   └── CleanedDataPreview.tsx  # In-memory cleaner, diff, and multi-format export
+│   │   ├── services/api.ts             # Typed REST client with session management
 │   │   └── types/index.ts              # TypeScript interfaces
 │   ├── dist/                           # Compiled production SPA (served by FastAPI)
 │   ├── package.json
 │   ├── tailwind.config.js
-│   ├── vite.config.ts
-│   └── README.md                       # Frontend UI architecture documentation
+│   └── vite.config.ts
 ├── tests/
-│   ├── test_parser.py                  # Parser & delimiter sniffing tests
+│   ├── test_api.py                     # FastAPI endpoint & visualization tests
+│   ├── test_session.py                 # Multi-user session isolation & LRU cache tests
+│   ├── test_recipe_customizer.py       # Custom recipe override tests
+│   ├── test_supervised.py              # Target leakage & mutual information tests
+│   ├── test_code_generator_passthrough.py # Passthrough retention tests
+│   ├── test_exporter.py                # Multi-format & notebook export tests
 │   ├── test_expert_system.py           # Knowledge base & inference tests
-│   └── test_api.py                     # FastAPI endpoint & visualization tests
-├── run.bat                             # Windows CMD runner
+│   └── test_parser.py                  # Parser & delimiter sniffing tests
+├── Dockerfile                          # Multi-stage production container build
+├── docker-compose.yml                  # One-line container orchestration
+├── pyproject.toml                      # Standard PEP 518/621 packaging & CLI entrypoint
+├── Makefile                            # Developer workflow commands
+├── start.sh                            # macOS / Linux startup script
 ├── start.ps1                           # PowerShell runner
+├── run.bat                             # Windows CMD runner
 └── README.md                           # Master repository documentation
 ```
 
@@ -195,12 +243,13 @@ Datalysis/
 
 ## Testing
 
-Run the automated test suite across all parser, expert system, and API integration suites:
-```powershell
-$env:PYTHONPATH="."
-.\.venv\Scripts\python.exe -m unittest discover tests
+Run the automated test suite across all 8 test modules:
+```bash
+pytest -v
+# or using uv:
+uv run pytest tests -v
 ```
-*Current test suite: 15 passing tests in ~0.3s.*
+*Current test suite: **41 passing tests** covering parser, rules engine, multi-format exporter, session isolation, recipe overrides, code generator, and supervised ML mode.*
 
 ---
 

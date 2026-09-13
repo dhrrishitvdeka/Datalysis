@@ -160,6 +160,7 @@ export interface AnalysisResponse {
   };
   pipeline_code: string;
   preview: Record<string, any>[];
+  session_id?: string;
 }
 
 export interface CleaningReport {
@@ -175,4 +176,43 @@ export interface SampleDatasetInfo {
   id: string;
   name: string;
   description: string;
+}
+
+export interface RecipeOverride {
+  drop?: boolean;
+  imputation?: 'auto' | 'median' | 'mean' | 'mode' | 'constant' | 'knn' | 'drop_rows' | 'none';
+  impute_value?: any;
+  encoding?: 'auto' | 'onehot' | 'frequency' | 'ordinal' | 'binary' | 'none';
+  outliers?: 'auto' | 'winsorize' | 'clip_iqr' | 'zscore' | 'none';
+  scaling?: 'auto' | 'standard' | 'robust' | 'log1p' | 'none';
+}
+
+export interface ProcessRequest {
+  column_overrides?: Record<string, RecipeOverride>;
+  drop_duplicates?: boolean;
+  target_variable?: string;
+}
+
+export interface FeatureImportance {
+  feature: string;
+  score: number;
+  correlation?: number | null;
+  leakage_risk: boolean;
+}
+
+export interface TargetAnalysisResponse {
+  target: string;
+  task_type: 'binary_classification' | 'multiclass_classification' | 'regression';
+  unique_count: number;
+  class_imbalance?: {
+    distribution: Record<string, { count: number; percentage: number }>;
+    minority_percentage: number;
+    gini_impurity: number;
+    entropy: number;
+    imbalance_severity: 'NONE' | 'MODERATE' | 'SEVERE';
+    recommendation: string;
+  } | null;
+  feature_importances: FeatureImportance[];
+  leakage_warnings: string[];
+  recommendation: string;
 }

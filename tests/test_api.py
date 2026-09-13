@@ -3,6 +3,7 @@ import io
 from fastapi.testclient import TestClient
 from backend.app.main import app
 
+
 class TestAPIEndpoints(unittest.TestCase):
 
     def setUp(self):
@@ -39,21 +40,70 @@ class TestAPIEndpoints(unittest.TestCase):
 
     def test_preprocessing_and_downloads(self):
         self.client.post("/api/load-sample/telecom")
-        # Execute preprocessing
+        # Execute preprocessing with default recipe
         proc_res = self.client.post("/api/process")
         self.assertEqual(proc_res.status_code, 200)
         report = proc_res.json()
         self.assertEqual(report["final_missing_cells"], 0)
 
-        # Test download cleaned
-        dl_res = self.client.get("/api/download-cleaned")
+        # Test download cleaned CSV
+        dl_res = self.client.get("/api/download-cleaned?format=csv")
         self.assertEqual(dl_res.status_code, 200)
         self.assertIn("text/csv", dl_res.headers.get("content-type", ""))
+
+        # Test download cleaned Parquet
+        parquet_res = self.client.get("/api/download-cleaned?format=parquet")
+        self.assertEqual(parquet_res.status_code, 200)
+        self.assertIn("application/octet-stream", parquet_res.headers.get("content-type", ""))
+
+        # Test download cleaned Excel
+        excel_res = self.client.get("/api/download-cleaned?format=excel")
+        self.assertEqual(excel_res.status_code, 200)
+        self.assertIn("spreadsheetml", excel_res.headers.get("content-type", ""))
+
+        # Test download cleaned SQLite
+        sqlite_res = self.client.get("/api/download-cleaned?format=sqlite")
+        self.assertEqual(sqlite_res.status_code, 200)
+        self.assertIn("application/x-sqlite3", sqlite_res.headers.get("content-type", ""))
 
         # Test download pipeline.py
         pipe_res = self.client.get("/api/download-pipeline")
         self.assertEqual(pipe_res.status_code, 200)
         self.assertIn("ColumnTransformer", pipe_res.text)
+
+        # Test download notebook
+        nb_res = self.client.get("/api/export/notebook")
+        self.assertEqual(nb_res.status_code, 200)
+        self.assertIn("ipynb", nb_res.headers.get("content-type", ""))
+
+        # Test download schema
+        schema_res = self.client.get("/api/export/schema")
+        self.assertEqual(schema_res.status_code, 200)
+        self.assertIn("DataFrameSchema", schema_res.text)
+
+    def test_custom_recipe_processing(self):
+        self.client.post("/api/load-sample/titanic")
+        payload = {
+            "column_overrides": {
+                "PassengerId": {"drop": False}
+            },
+            "drop_duplicates": True
+        }
+        res = self.client.post("/api/process", json=payload)
+        self.assertEqual(res.status_code, 200)
+        report = res.json()
+        self.assertIn("preview", report)
+        self.assertTrue(any("PassengerId" in row for row in report["preview"]))
+
+    def test_supervised_target_mode_endpoint(self):
+        self.client.post("/api/load-sample/titanic")
+        res = self.client.post("/api/supervised/target-analysis?target=Survived")
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertEqual(data["target"], "Survived")
+        self.assertEqual(data["task_type"], "binary_classification")
+        self.assertIn("feature_importances", data)
+        self.assertGreater(len(data["feature_importances"]), 0)
 
     def test_visualization_endpoints(self):
         # Load sample
@@ -80,6 +130,7 @@ class TestAPIEndpoints(unittest.TestCase):
         miss_data = res_miss.json()
         self.assertIn("chunks", miss_data)
         self.assertIn("columns", miss_data)
+
 
 if __name__ == "__main__":
     unittest.main()

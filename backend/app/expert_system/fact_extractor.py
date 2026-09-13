@@ -50,18 +50,56 @@ def is_likely_datetime_string(series: pd.Series) -> bool:
             return False
     return False
 
-def is_likely_identifier(col_name: str, uniqueness_ratio: float, total_rows: int, dtype_str: str) -> bool:
-    name_lower = col_name.lower().strip()
-    date_tokens = ['date', 'time', 'timestamp', 'datetime']
-    if any(tok in name_lower for tok in date_tokens):
+def is_likely_identifier(col_name: str, uniqueness_ratio: float, total_rows: int, dtype_str: str, series: Optional[pd.Series] = None) -> bool:
+    # Convert camelCase and dashes to underscores (e.g. userId -> user_id, customerID -> customer_id)
+    name_normalized = re.sub(r'([a-z0-9])([A-Z])', r'\1_\2', col_name).lower().strip()
+    tokens = set(re.split(r'[^a-zA-Z0-9]+', name_normalized))
+
+    date_tokens = {'date', 'time', 'timestamp', 'datetime', 'year', 'month', 'day'}
+    if tokens & date_tokens or any(tok in name_normalized for tok in ['timestamp', 'datetime']):
         return False
 
-    id_tokens = ['id', '_id', 'uuid', 'guid', 'key', 'code', 'serial', 'hash', 'ssn', 'account_num', 'ticket', 'index']
-    has_id_name = any(tok == name_lower or name_lower.endswith(f"_{tok}") or name_lower.startswith(f"{tok}_") for tok in id_tokens)
-    
-    if has_id_name and uniqueness_ratio > 0.85 and total_rows > 20:
+    # Exclude obvious free-text, natural language, or contact fields
+    non_id_tokens = {
+        'comment', 'text', 'desc', 'description', 'notes', 'feedback', 'email', 'body',
+        'message', 'address', 'summary', 'review', 'bio', 'name', 'title', 'headline'
+    }
+    if tokens & non_id_tokens or any(tok in name_normalized for tok in ['email', 'description', 'feedback', 'review']):
+        return False
+
+    id_tokens = {'id', 'identifier', 'uuid', 'guid', 'key', 'code', 'serial', 'hash', 'ssn', 'ticket', 'index', 'account_num', 'account_no'}
+    has_id_name = bool(tokens & id_tokens) or any(
+        name_normalized.endswith(f"_{tok}") or name_normalized.startswith(f"{tok}_") or name_normalized == tok
+        for tok in id_tokens
+    )
+
+    # Check series characteristics if provided
+    if series is not None and len(series.dropna()) > 0:
+        sample = series.dropna().astype(str).head(50)
+        # Check for email pattern
+        email_like = sum(1 for s in sample if '@' in s and '.' in s)
+        if email_like / len(sample) > 0.2:
+            return False
+
+        # Natural text has spaces, multiple words, or longer average length
+        mean_len = float(sample.str.len().mean())
+        mean_words = float(sample.str.split().str.len().mean())
+        has_spaces = float((sample.str.contains(r'\s', regex=True)).mean())
+
+        if mean_words > 1.5 or mean_len > 35 or has_spaces > 0.3:
+            return False
+
+    if has_id_name and uniqueness_ratio > 0.85 and total_rows >= 10:
         return True
-    if total_rows > 30 and uniqueness_ratio > 0.98 and dtype_str in ['object', 'str', 'string']:
+
+    # If no explicit ID name, require very high uniqueness and strictly compact single tokens without spaces
+    if total_rows >= 25 and uniqueness_ratio > 0.98 and dtype_str in ['object', 'str', 'string']:
+        if series is not None and len(series.dropna()) > 0:
+            sample = series.dropna().astype(str).head(30)
+            has_spaces = float((sample.str.contains(r'\s', regex=True)).mean())
+            mean_len = float(sample.str.len().mean())
+            if has_spaces > 0.05 or mean_len > 35:
+                return False
         return True
     return False
 
@@ -105,7 +143,7 @@ def extract_column_facts(df: pd.DataFrame, col: str) -> Dict[str, Any]:
         inferred_type = "datetime"
     elif is_constant:
         inferred_type = "constant"
-    elif is_likely_identifier(col, uniqueness_ratio, total_rows, raw_dtype):
+    elif is_likely_identifier(col, uniqueness_ratio, total_rows, raw_dtype, series=series):
         inferred_type = "identifier"
         is_id = True
     elif pd.api.types.is_bool_dtype(series):
@@ -296,6 +334,39 @@ def extract_dataset_facts(df: pd.DataFrame) -> Dict[str, Any]:
             high_correlation_pairs.sort(key=lambda x: x["abs_correlation"], reverse=True)
         except Exception:
             pass
+
+    # Categorical association via Cramer's V for nominal pairs
+    cat_cols = [c for c, f in columns_facts.items() if "categorical" in f.get("inferred_type", "") or f.get("inferred_type") == "boolean"]
+    if len(cat_cols) >= 2:
+        for i in range(len(cat_cols)):
+            for j in range(i + 1, min(len(cat_cols), i + 10)):
+                c1, c2 = cat_cols[i], cat_cols[j]
+                try:
+                    sub = df[[c1, c2]].dropna()
+                    if len(sub) > 20:
+                        conf = pd.crosstab(sub[c1], sub[c2])
+                        if conf.shape[0] > 1 and conf.shape[1] > 1:
+                            chi2 = sp_stats.chi2_contingency(conf)[0]
+                            n = conf.sum().sum()
+                            phi2 = chi2 / n
+                            r, k = conf.shape
+                            phi2corr = max(0, phi2 - ((k - 1) * (r - 1)) / (n - 1))
+                            rcorr = r - ((r - 1) ** 2) / (n - 1)
+                            kcorr = k - ((k - 1) ** 2) / (n - 1)
+                            denom = min((kcorr - 1), (rcorr - 1))
+                            if denom > 0:
+                                cv = float(np.sqrt(phi2corr / denom))
+                                if cv >= 0.75:
+                                    high_correlation_pairs.append({
+                                        "feature_a": c1,
+                                        "feature_b": c2,
+                                        "correlation": round(cv, 3),
+                                        "abs_correlation": round(cv, 3),
+                                        "severity": "CRITICAL" if cv >= 0.90 else "WARNING"
+                                    })
+                except Exception:
+                    pass
+        high_correlation_pairs.sort(key=lambda x: x["abs_correlation"], reverse=True)
 
     # Missingness correlation heuristic (to detect MAR / co-missing structures)
     missing_cols = [c for c, f in columns_facts.items() if f["missing_pct"] > 0]
