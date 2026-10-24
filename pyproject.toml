@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "datalysis"
-version = "1.0.0"
+version = "1.1.0"
 description = "Autonomous local tabular analysis and preprocessing expert system without LLMs."
 readme = "README.md"
 authors = [{ name = "Datalysis Contributors" }]

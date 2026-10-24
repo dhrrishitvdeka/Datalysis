@@ -1,5 +1,6 @@
 import io
 import json
+import os
 import uuid
 from typing import Dict, Any, Optional
 from fastapi import FastAPI, UploadFile, File, HTTPException, Query, Header, Depends, Request, Response, Cookie
@@ -10,6 +11,7 @@ import numpy as np
 from scipy import stats as sp_stats
 
 from .parser import load_file_to_dataframe
+from .expert_system.sanitizer import sanitize_dataframe
 from .expert_system.fact_extractor import extract_dataset_facts
 from .expert_system.engine import run_expert_inference
 from .expert_system.code_generator import generate_python_pipeline_code
@@ -30,7 +32,7 @@ from .exporter import export_dataframe, generate_jupyter_notebook, generate_pand
 app = FastAPI(
     title="Datalysis Local Webapp - Expert Preprocessing AI",
     description="Autonomous local tabular analysis and preprocessing expert system without LLMs.",
-    version="1.0.0"
+    version="1.1.0"
 )
 
 # Enable CORS for local development & Vite dev server
@@ -44,6 +46,9 @@ app.add_middleware(
 )
 
 DEFAULT_SESSION_ID = "datalysis-default-session"
+
+# Largest accepted upload; override with the DATALYSIS_MAX_UPLOAD_MB environment variable
+MAX_UPLOAD_BYTES = int(float(os.environ.get("DATALYSIS_MAX_UPLOAD_MB", "200")) * 1024 * 1024)
 
 
 def resolve_session(
@@ -95,12 +100,26 @@ async def add_session_header(request: Request, call_next):
     return response
 
 
-def analyze_and_cache(df: pd.DataFrame, metadata: Dict[str, Any], session: DatasetSession) -> Dict[str, Any]:
-    facts = extract_dataset_facts(df)
-    inference = run_expert_inference(facts)
-    pipeline_code = generate_python_pipeline_code(facts, inference)
+def analyze_and_cache(
+    df: pd.DataFrame,
+    metadata: Dict[str, Any],
+    session: DatasetSession,
+    auto_repair: bool = True,
+) -> Dict[str, Any]:
+    original_df = df
+    repairs: list = []
+    if auto_repair:
+        repaired_df, repairs = sanitize_dataframe(df)
+        if repairs:
+            df = repaired_df  # otherwise keep the single original object instead of a second copy in memory
 
+    facts = extract_dataset_facts(df)
+    inference = run_expert_inference(facts, repairs=repairs)
+    pipeline_code = generate_python_pipeline_code(facts, inference, repairs=repairs)
+
+    session.original_df = original_df
     session.raw_df = df
+    session.repairs = repairs
     session.cleaned_df = None
     session.cleaning_report = None
     session.metadata = metadata
@@ -122,8 +141,21 @@ def analyze_and_cache(df: pd.DataFrame, metadata: Dict[str, Any], session: Datas
         "inference": inference,
         "pipeline_code": pipeline_code,
         "preview": preview_records,
+        "repairs": repairs,
         "session_id": session.session_id
     }
+
+
+def set_target(session: DatasetSession, target: str) -> None:
+    """Remembers the supervised target and regenerates the pipeline script so it excludes and splits on it."""
+    if target != session.target_variable:
+        session.cleaned_df = None  # a cleaned frame made without this target is stale
+        session.cleaning_report = None
+        session.target_analysis = None
+    session.target_variable = target
+    session.pipeline_code = generate_python_pipeline_code(
+        session.facts, session.inference, target_col=target, repairs=session.repairs
+    )
 
 
 @app.get("/api/health")
@@ -131,7 +163,7 @@ def healthcheck():
     return {
         "status": "ok",
         "app": "Datalysis Expert System",
-        "version": "1.0.0",
+        "version": "1.1.0",
         "active_sessions": session_manager.count()
     }
 
@@ -149,7 +181,11 @@ def list_sample_datasets():
 
 
 @app.post("/api/load-sample/{sample_id}", response_model=AnalysisResponseModel)
-def load_sample(sample_id: str, session: DatasetSession = Depends(resolve_session)):
+def load_sample(
+    sample_id: str,
+    auto_repair: bool = Query(True, description="Apply the R-QLT data-quality repairs before analysis"),
+    session: DatasetSession = Depends(resolve_session)
+):
     if sample_id not in SAMPLE_GENERATORS:
         raise HTTPException(status_code=404, detail=f"Sample '{sample_id}' not found.")
 
@@ -166,24 +202,32 @@ def load_sample(sample_id: str, session: DatasetSession = Depends(resolve_sessio
         "columns": len(df.columns),
         "sample_name": info["name"]
     }
-    return analyze_and_cache(df, metadata, session)
+    return analyze_and_cache(df, metadata, session, auto_repair=auto_repair)
 
 
 @app.post("/api/upload", response_model=AnalysisResponseModel)
 async def upload_dataset(
     file: UploadFile = File(...),
+    auto_repair: bool = Query(True, description="Apply the R-QLT data-quality repairs before analysis"),
+    sheet: Optional[str] = Query(None, description="Excel sheet name (default: first sheet)"),
     session: DatasetSession = Depends(resolve_session)
 ):
     try:
-        content = await file.read()
+        # Read one byte past the limit so an oversized file is detected without loading all of it
+        content = await file.read(MAX_UPLOAD_BYTES + 1)
+        if len(content) > MAX_UPLOAD_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=f"File is larger than the {MAX_UPLOAD_BYTES / (1024 * 1024):g} MB upload limit.",
+            )
         if not content:
             raise HTTPException(status_code=400, detail="Uploaded file is empty.")
 
-        df, metadata = load_file_to_dataframe(content, file.filename or "uploaded_dataset.csv")
+        df, metadata = load_file_to_dataframe(content, file.filename or "uploaded_dataset.csv", sheet=sheet)
         if df.empty:
             raise HTTPException(status_code=400, detail="Could not extract any rows from the file.")
 
-        return analyze_and_cache(df, metadata, session)
+        return analyze_and_cache(df, metadata, session, auto_repair=auto_repair)
     except HTTPException:
         raise
     except Exception as e:
@@ -202,11 +246,19 @@ def execute_cleaning(
     if recipe_dict:
         session.custom_recipe = recipe_dict
 
+    # A target in the request body wins over the one chosen in target analysis
+    requested_target = (payload.target_column or payload.target_variable) if payload else None
+    if requested_target and requested_target != session.target_variable:
+        if requested_target not in session.raw_df.columns:
+            raise HTTPException(status_code=400, detail=f"Target column '{requested_target}' not found in dataset.")
+        set_target(session, requested_target)
+
     cleaned_df, report = execute_preprocessing_pipeline(
         session.raw_df,
         session.facts,
         session.inference,
-        recipe_overrides=recipe_dict
+        recipe_overrides=recipe_dict,
+        target_col=session.target_variable
     )
     session.cleaned_df = cleaned_df
     session.cleaning_report = report
@@ -225,7 +277,7 @@ def analyze_target(
 
     try:
         analysis = analyze_target_variable(session.raw_df, target)
-        session.target_variable = target
+        set_target(session, target)
         session.target_analysis = analysis
         session.touch()
         return analysis
@@ -247,7 +299,8 @@ def download_cleaned(
                 session.raw_df,
                 session.facts,
                 session.inference,
-                recipe_overrides=session.custom_recipe
+                recipe_overrides=session.custom_recipe,
+                target_col=session.target_variable
             )
             session.cleaned_df = cleaned_df
             session.cleaning_report = report

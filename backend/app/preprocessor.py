@@ -2,17 +2,27 @@ import numpy as np
 import pandas as pd
 from typing import Dict, Any, Tuple, Optional
 
+from .expert_system.encoding import binary_mapping, ordinal_mapping
+from .expert_system.fact_extractor import inf_to_nan, parse_dates
+
 
 def execute_preprocessing_pipeline(
     df_raw: pd.DataFrame,
     dataset_facts: Dict[str, Any],
     inference_results: Dict[str, Any],
     recipe_overrides: Optional[Dict[str, Any]] = None,
+    target_col: Optional[str] = None,
 ) -> Tuple[pd.DataFrame, Dict[str, Any]]:
     """
     Executes the recommended or customized transformations directly on the DataFrame.
     Returns the transformed DataFrame and a comprehensive before/after report.
+
+    `target_col` (supervised mode) is protected: it is never dropped, imputed, encoded, scaled or
+    clipped. Rows whose target is missing are dropped instead, and the target ends up as the last column.
     """
+    if target_col is not None and target_col not in df_raw.columns:
+        raise ValueError(f"Target column '{target_col}' not found in dataset.")
+
     df = df_raw.copy()
     col_recs = inference_results.get("column_recommendations", {})
     steps_log = []
@@ -31,16 +41,19 @@ def execute_preprocessing_pipeline(
     initial_cols = len(df.columns)
     initial_missing = int(df.isna().sum().sum())
 
-    # 1. Drop Duplicates
-    if should_drop_dups:
-        dup_count = int(df.duplicated().sum())
-        if dup_count > 0:
-            df = df.drop_duplicates()
-            steps_log.append(f"Dropped {dup_count} exact duplicate rows.")
+    def feature_columns():
+        """Current columns except the protected target."""
+        return [c for c in df.columns if c != target_col]
 
-    # 2. Prune Columns flagged for removal (with user override support)
+    # 0. Infinite values carry no information: treat them as missing so they get imputed
+    inf_count = int(np.isinf(df.select_dtypes(include="floating").to_numpy(dtype="float64", na_value=np.nan)).sum())
+    if inf_count > 0:
+        df = inf_to_nan(df)
+        steps_log.append(f"Converted {inf_count} infinite value(s) to missing.")
+
+    # 1. Prune Columns flagged for removal (with user override support)
     drop_cols = []
-    for c in list(df.columns):
+    for c in feature_columns():
         c_override = overrides.get(c, {})
         if isinstance(c_override, dict) and "drop" in c_override and c_override["drop"] is not None:
             if c_override["drop"]:
@@ -51,20 +64,41 @@ def execute_preprocessing_pipeline(
                 drop_cols.append(c)
 
     if drop_cols:
-        df = df.drop(columns=[c for c in drop_cols if c in df.columns])
-        steps_log.append(f"Pruned {len(drop_cols)} column(s): {', '.join(drop_cols)}")
+        if len(drop_cols) >= len(feature_columns()):
+            steps_log.append(
+                f"Skipped pruning: all {len(drop_cols)} column(s) were flagged for removal, "
+                "so they were kept to avoid producing an empty dataset."
+            )
+        else:
+            df = df.drop(columns=drop_cols)
+            steps_log.append(f"Pruned {len(drop_cols)} column(s): {', '.join(drop_cols)}")
+
+    # 2. Rows without a target value cannot be used for supervised learning (imputing a label invents data)
+    if target_col is not None:
+        missing_target = int(df[target_col].isna().sum())
+        if missing_target > 0:
+            df = df.dropna(subset=[target_col])
+            steps_log.append(f"Dropped {missing_target} row(s) with a missing target '{target_col}'.")
+
+    # 2b. Drop Duplicates. Compared on the columns that remain after pruning, so rows that differ only
+    # by a dropped ID column are caught too.
+    if should_drop_dups:
+        dup_count = int(df.duplicated().sum())
+        if dup_count > 0:
+            df = df.drop_duplicates()
+            steps_log.append(f"Dropped {dup_count} duplicate rows (compared on the {len(df.columns)} columns kept after pruning, so ID columns cannot hide duplicates).")
 
     # 3. Handle Datetime Features (enhanced for IoT, telemetry, and time-of-day)
-    datetime_cols = [c for c, r in col_recs.items() if r.get("datetime_engineering") and c in df.columns]
+    datetime_cols = [c for c, r in col_recs.items() if r.get("datetime_engineering") and c in df.columns and c != target_col]
     for dt_col in datetime_cols:
         try:
-            dt_s = pd.to_datetime(df[dt_col], errors="coerce")
+            dt_s = parse_dates(df[dt_col])
             month = dt_s.dt.month.fillna(1).astype(int)
             df[f"{dt_col}_year"] = dt_s.dt.year.fillna(2000).astype(int)
             df[f"{dt_col}_month"] = month
             df[f"{dt_col}_day"] = dt_s.dt.day.fillna(1).astype(int)
-            df[f"{dt_col}_dayofweek"] = dt_s.dt.dayofweek.fillna(0).astype(int)
-            df[f"{dt_col}_is_weekend"] = dt_s.dt.dayofweek.isin([5, 6]).astype(int)
+            df[f"{dt_col}_dayofweek"] = dt_s.dt.day_of_week.fillna(0).astype(int)
+            df[f"{dt_col}_is_weekend"] = dt_s.dt.day_of_week.isin([5, 6]).astype(int)
             df[f"{dt_col}_sin_month"] = np.sin(2 * np.pi * month / 12.0)
             df[f"{dt_col}_cos_month"] = np.cos(2 * np.pi * month / 12.0)
 
@@ -86,7 +120,7 @@ def execute_preprocessing_pipeline(
 
     # 4. Imputation Handling
     # Check for row-drop override first
-    for col in list(df.columns):
+    for col in feature_columns():
         c_override = overrides.get(col, {})
         if isinstance(c_override, dict) and c_override.get("imputation") == "drop_rows":
             null_count = int(df[col].isna().sum())
@@ -96,7 +130,7 @@ def execute_preprocessing_pipeline(
 
     # KNN Imputation
     knn_cols = []
-    for col in list(df.columns):
+    for col in feature_columns():
         if df[col].isna().sum() == 0:
             continue
         c_override = overrides.get(col, {})
@@ -109,7 +143,7 @@ def execute_preprocessing_pipeline(
             knn_cols.append(col)
 
     if knn_cols:
-        numeric_neighbors = [c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])]
+        numeric_neighbors = [c for c in feature_columns() if pd.api.types.is_numeric_dtype(df[c])]
         if len(numeric_neighbors) >= 2:
             try:
                 from sklearn.impute import KNNImputer
@@ -129,7 +163,7 @@ def execute_preprocessing_pipeline(
                 df[col] = df[col].fillna(df[col].median() if df[col].notna().any() else 0)
 
     # Standard Imputation per column
-    for col in list(df.columns):
+    for col in feature_columns():
         if col in knn_cols or df[col].isna().sum() == 0:
             continue
 
@@ -173,7 +207,7 @@ def execute_preprocessing_pipeline(
                 df[col] = df[col].fillna("Missing")
 
     # 5. Outlier Capping and Scaling (Decoupled execution)
-    for col in list(df.columns):
+    for col in feature_columns():
         if not pd.api.types.is_numeric_dtype(df[col]):
             continue
 
@@ -264,7 +298,7 @@ def execute_preprocessing_pipeline(
 
     # 6. Binary and Categorical Encodings
     cat_to_encode = []
-    for col in list(df.columns):
+    for col in feature_columns():
         c_override = overrides.get(col, {})
         override_enc = c_override.get("encoding") if isinstance(c_override, dict) else None
         rec = col_recs.get(col, {})
@@ -276,20 +310,26 @@ def execute_preprocessing_pipeline(
         selected_enc = (enc.get("action") if enc else None) if (override_enc is None or override_enc == "auto") else override_enc
 
         if selected_enc in ["encode_binary", "binary"] and col in df.columns:
-            uniq = [v for v in df[col].dropna().unique()]
-            mapping = {uniq[i]: i for i in range(min(2, len(uniq)))}
-            df[col] = df[col].map(lambda v, m=mapping: m.get(v, 0)).astype(int)
-            steps_log.append(f"Mapped binary feature '{col}' to 0/1 integers.")
+            n_distinct = int(df[col].nunique())
+            if n_distinct > 2:
+                # Forced binary on a column with more than 2 values: do not collapse the extra categories
+                df[col] = _map_codes(df[col], ordinal_mapping(df[col]))
+                steps_log.append(f"Binary encoding was requested for '{col}' but it has {n_distinct} distinct values; used ordinal encoding on the sorted values instead of merging categories.")
+            else:
+                mapping = binary_mapping(df[col])
+                df[col] = _map_codes(df[col], mapping)
+                shown = ", ".join(f"{(k.item() if isinstance(k, np.generic) else k)!r} -> {v}" for k, v in mapping.items())
+                steps_log.append(f"Mapped binary feature '{col}' to 0/1 integers ({shown}).")
         elif selected_enc in ["encode_frequency_or_target", "frequency"] and col in df.columns:
             freq = df[col].value_counts(normalize=True)
             df[col] = df[col].map(freq).astype(float)
             df[col] = df[col].fillna(0.0)
             steps_log.append(f"Frequency-encoded high-cardinality feature '{col}'.")
         elif selected_enc in ["encode_ordinal", "ordinal"] and col in df.columns:
-            categories = list(df[col].dropna().unique())
-            ord_map = {cat: idx for idx, cat in enumerate(categories)}
-            df[col] = df[col].map(lambda v, m=ord_map: m.get(v, 0)).astype(int)
-            steps_log.append(f"Ordinal-encoded feature '{col}'.")
+            order = dataset_facts.get("columns", {}).get(col, {}).get("ordinal_order")
+            df[col] = _map_codes(df[col], ordinal_mapping(df[col], order))
+            how = f"in the order {order}" if order else "on the sorted values"
+            steps_log.append(f"Ordinal-encoded feature '{col}' {how}.")
         elif selected_enc in ["encode_onehot", "onehot"] and col in df.columns:
             cat_to_encode.append(col)
 
@@ -300,7 +340,7 @@ def execute_preprocessing_pipeline(
     # 7. Residual Missing Cells Safety Net
     leftover = int(df.isna().sum().sum())
     if leftover > 0:
-        for col in df.columns:
+        for col in feature_columns():
             if df[col].isna().sum() == 0:
                 continue
             if pd.api.types.is_numeric_dtype(df[col]):
@@ -309,6 +349,10 @@ def execute_preprocessing_pipeline(
                 mode_val = df[col].mode()
                 df[col] = df[col].fillna(mode_val.iloc[0] if not mode_val.empty else "Missing")
         steps_log.append(f"Filled {leftover} residual missing cell(s) with column-wise median/mode.")
+
+    if target_col is not None:
+        df = df[feature_columns() + [target_col]]
+        steps_log.append(f"Protected target '{target_col}': left untransformed and moved to the last column.")
 
     final_rows = len(df)
     final_cols = len(df.columns)
@@ -326,6 +370,12 @@ def execute_preprocessing_pipeline(
     }
 
     return df, report
+
+
+def _map_codes(series: pd.Series, mapping: Dict[Any, int]) -> pd.Series:
+    """Applies a category -> integer mapping; stays integer unless a missing value remains."""
+    codes = series.map(mapping)
+    return codes.astype(int) if codes.notna().all() else codes
 
 
 def json_safe_preview(df: pd.DataFrame):

@@ -2,6 +2,7 @@ import re
 import math
 import numpy as np
 import pandas as pd
+from scipy import stats as sp_stats
 from typing import Dict, Any, List, Optional
 
 KNOWN_ORDINAL_SEQUENCES = [
@@ -33,6 +34,46 @@ def detect_ordinal_sequence(unique_vals: List[Any]) -> Optional[List[str]]:
             return [x for x in seq if x in cleaned_set]
     return None
 
+DAY_MONTH_YEAR_REGEX = r'^\s*(\d{1,2})[-/.]\d{1,2}[-/.]\d{2,4}'
+
+
+def to_datetime_safe(series: pd.Series, dayfirst: bool = False) -> pd.Series:
+    """pd.to_datetime that never raises on bad values (they become NaT) and tolerates mixed UTC offsets."""
+    try:
+        return pd.to_datetime(series, errors="coerce", format="mixed", dayfirst=dayfirst)
+    except ValueError:
+        # Mixed timezone offsets in one column cannot be held in one dtype; normalise to UTC.
+        return pd.to_datetime(series, errors="coerce", format="mixed", dayfirst=dayfirst, utc=True)
+
+
+def parse_dates(series: pd.Series) -> pd.Series:
+    """
+    Parses date strings to datetime64 (unparseable values -> NaT).
+    If any d/m/y-style value has a first field > 12 (e.g. 13/01/2020) the column is day-first,
+    so every d/m/y-style value is parsed day-first. ISO dates (2020-01-31) are always parsed year-first.
+    """
+    if pd.api.types.is_datetime64_any_dtype(series):
+        return series
+    text = series.astype(str)
+    first_field = text.str.extract(DAY_MONTH_YEAR_REGEX)[0]
+    is_dmy = first_field.notna() & series.notna()
+    if not (pd.to_numeric(first_field[is_dmy]) > 12).any():
+        return to_datetime_safe(series)
+    parsed_other = to_datetime_safe(series.where(~is_dmy))
+    parsed_dmy = to_datetime_safe(series.where(is_dmy), dayfirst=True)
+    return parsed_other.fillna(parsed_dmy)
+
+
+def inf_to_nan(df: pd.DataFrame) -> pd.DataFrame:
+    """Returns a frame where +/-inf in float columns are NaN (infinite values carry no usable information)."""
+    float_cols = df.select_dtypes(include="floating").columns
+    if len(float_cols) == 0:
+        return df
+    out = df.copy()
+    out[float_cols] = out[float_cols].replace([np.inf, -np.inf], np.nan)
+    return out
+
+
 def is_likely_datetime_string(series: pd.Series) -> bool:
     if series.empty:
         return False
@@ -43,11 +84,7 @@ def is_likely_datetime_string(series: pd.Series) -> bool:
     date_regex = re.compile(r'^\d{4}[-/.]\d{1,2}[-/.]\d{1,2}|\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}')
     matches = sum(1 for s in sample if date_regex.match(s.strip()))
     if matches / len(sample) > 0.7:
-        try:
-            pd.to_datetime(sample.head(10))
-            return True
-        except Exception:
-            return False
+        return bool(parse_dates(sample).notna().mean() >= 0.9)
     return False
 
 def is_likely_identifier(col_name: str, uniqueness_ratio: float, total_rows: int, dtype_str: str, series: Optional[pd.Series] = None) -> bool:
@@ -128,7 +165,8 @@ def extract_column_facts(df: pd.DataFrame, col: str) -> Dict[str, Any]:
     uniqueness_ratio = round(unique_count / non_null_count, 4) if non_null_count > 0 else 0.0
 
     raw_dtype = str(series.dtype)
-    is_constant = (unique_count <= 1 and non_null_count > 0)
+    # A single row cannot show variance, so it is never called constant
+    is_constant = (unique_count <= 1 and non_null_count > 0 and total_rows >= 2)
     
     # Infer semantic type
     inferred_type = "categorical_nominal"
@@ -168,6 +206,12 @@ def extract_column_facts(df: pd.DataFrame, col: str) -> Dict[str, Any]:
         else:
             inferred_type = "categorical_nominal"
 
+    # Share of non-null rows taken by the single most frequent value (near-zero variance check)
+    dominant_value_pct = 0.0
+    if non_null_count > 0:
+        dominant_value_pct = round(float(series.value_counts().iloc[0]) / non_null_count * 100, 2)
+    is_quasi_constant = (not is_constant) and unique_count >= 2 and dominant_value_pct >= 99.0
+
     sample_values = [str(x) for x in series.dropna().head(5).tolist()]
 
     fact: Dict[str, Any] = {
@@ -182,6 +226,8 @@ def extract_column_facts(df: pd.DataFrame, col: str) -> Dict[str, Any]:
         "is_constant": is_constant,
         "is_binary": is_binary,
         "is_identifier": is_id,
+        "dominant_value_pct": dominant_value_pct,
+        "is_quasi_constant": is_quasi_constant,
         "ordinal_order": ordinal_order,
         "sample_values": sample_values,
         "numeric_stats": None,
@@ -270,7 +316,7 @@ def extract_column_facts(df: pd.DataFrame, col: str) -> Dict[str, Any]:
     # Datetime detailed profiling
     if inferred_type == "datetime":
         try:
-            dt_series = pd.to_datetime(series, errors='coerce')
+            dt_series = parse_dates(series)
             dt_valid = dt_series.dropna()
             if not dt_valid.empty:
                 min_dt = dt_valid.min()
@@ -290,6 +336,7 @@ def extract_dataset_facts(df: pd.DataFrame) -> Dict[str, Any]:
     """
     Extracts high-level and per-column statistical facts from the DataFrame.
     """
+    df = inf_to_nan(df)
     row_count = int(len(df))
     col_count = int(len(df.columns))
     total_cells = row_count * col_count
@@ -341,6 +388,8 @@ def extract_dataset_facts(df: pd.DataFrame) -> Dict[str, Any]:
         for i in range(len(cat_cols)):
             for j in range(i + 1, min(len(cat_cols), i + 10)):
                 c1, c2 = cat_cols[i], cat_cols[j]
+                if c1 in numeric_cols and c2 in numeric_cols:
+                    continue  # numeric 0/1 pairs are already covered by Pearson
                 try:
                     sub = df[[c1, c2]].dropna()
                     if len(sub) > 20:
@@ -388,6 +437,14 @@ def extract_dataset_facts(df: pd.DataFrame) -> Dict[str, Any]:
         except Exception:
             pass
 
+    # Rows that only look unique because of an ID column: duplicates once identifiers are ignored
+    id_cols = [c for c, f in columns_facts.items() if f["is_identifier"]]
+    non_id_cols = [c for c in df.columns if c not in id_cols]
+    hidden_duplicate_rows = 0
+    if id_cols and non_id_cols:
+        dup_ignoring_ids = df.duplicated(subset=non_id_cols)
+        hidden_duplicate_rows = int((dup_ignoring_ids & ~df.duplicated()).sum())
+
     type_counts = {
         "numerical_continuous": 0,
         "numerical_discrete": 0,
@@ -413,6 +470,7 @@ def extract_dataset_facts(df: pd.DataFrame) -> Dict[str, Any]:
             "overall_missing_pct": overall_missing_pct,
             "duplicate_rows": duplicate_rows,
             "duplicate_pct": duplicate_pct,
+            "hidden_duplicate_rows": hidden_duplicate_rows,
             "memory_mb": memory_mb,
             "type_counts": type_counts,
             "columns_with_missing": len(missing_cols),

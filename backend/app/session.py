@@ -7,14 +7,16 @@ import time
 import uuid
 import threading
 from dataclasses import dataclass, field
-from typing import Dict, Any, Optional
+from typing import Dict, Any, List, Optional
 import pandas as pd
 
 
 @dataclass
 class DatasetSession:
     session_id: str
-    raw_df: Optional[pd.DataFrame] = None
+    original_df: Optional[pd.DataFrame] = None  # exactly as parsed, before data-quality repairs
+    raw_df: Optional[pd.DataFrame] = None  # repaired frame that all analysis uses
+    repairs: Optional[List[Dict[str, Any]]] = None
     cleaned_df: Optional[pd.DataFrame] = None
     metadata: Optional[Dict[str, Any]] = None
     facts: Optional[Dict[str, Any]] = None

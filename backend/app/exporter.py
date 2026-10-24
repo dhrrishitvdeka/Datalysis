@@ -18,6 +18,9 @@ def export_dataframe(df: pd.DataFrame, format: str, base_filename: str = "datase
     Exports a DataFrame into the specified format.
     Returns: (content_bytes, mime_type, output_filename)
     """
+    if df.shape[1] == 0:
+        raise ValueError("nothing to export: all columns were dropped")
+
     clean_base = base_filename.rsplit(".", 1)[0]
     fmt = format.lower().strip()
 
@@ -86,15 +89,15 @@ def export_dataframe(df: pd.DataFrame, format: str, base_filename: str = "datase
             safe_df = df.copy()
             import re
             new_cols = []
-            seen_cols = set()
+            seen_cols = set()  # lower-case names: SQLite column names are case-insensitive
             for i, c in enumerate(safe_df.columns):
                 cleaned = re.sub(r"[^a-zA-Z0-9_]+", "_", str(c)).strip("_") or f"col_{i}"
                 cand = cleaned
-                idx = 1
-                while cand in seen_cols:
+                idx = 2
+                while cand.lower() in seen_cols:
                     cand = f"{cleaned}_{idx}"
                     idx += 1
-                seen_cols.add(cand)
+                seen_cols.add(cand.lower())
                 new_cols.append(cand)
             safe_df.columns = new_cols
             safe_df.to_sql("cleaned_data", conn, index=False, if_exists="replace")
@@ -242,11 +245,14 @@ display(summary_df[summary_df['Missing_Count'] > 0])
     })
 
     # Code Cell 4: Transformation Run
-    run_code = """# Clean and transform dataset
-cleaned_features = clean_and_transform(df)
-print(f"Transformed output type: {type(cleaned_features)}")
-if isinstance(cleaned_features, pd.DataFrame):
-    display(cleaned_features.head())
+    run_code = """# Clean and transform dataset.
+# With a target, the script splits first and fits on the training rows only (no leakage).
+result = clean_and_transform(df)
+if isinstance(result, tuple):
+    X_train, X_test, y_train, y_test = result
+    display(X_train.head())
+else:
+    display(result.head())
 """
     cells.append({
         "cell_type": "code",
@@ -267,22 +273,12 @@ if isinstance(cleaned_features, pd.DataFrame):
     target_var_code = f"TARGET = '{target_col}'" if target_col else "TARGET = None  # e.g., 'Survived'"
     modeling_code = f"""{target_var_code}
 
-if TARGET and TARGET in df.columns:
-    from sklearn.model_selection import train_test_split
-    from sklearn.ensemble import HistGradientBoostingClassifier, HistGradientBoostingRegressor
-    
-    X = df.drop(columns=[TARGET])
-    y = df[TARGET]
-    
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-    preprocessor = build_preprocessing_pipeline()
-    X_train_proc = preprocessor.fit_transform(X_train)
-    X_test_proc = preprocessor.transform(X_test)
-    
-    print(f"X_train preprocessed shape: {{X_train_proc.shape}}")
-    print(f"X_test preprocessed shape: {{X_test_proc.shape}}")
+if TARGET and TARGET == TARGET_COLUMN and isinstance(result, tuple):
+    # X_train / X_test come from clean_and_transform above: split first, fitted on training rows only
+    print(f"X_train preprocessed shape: {{X_train.shape}}")
+    print(f"X_test preprocessed shape: {{X_test.shape}}")
 else:
-    print("Specify TARGET variable above to run baseline machine learning model.")
+    print("Download the pipeline after selecting a target to get a leakage-safe train/test split here.")
 """
     cells.append({
         "cell_type": "code",

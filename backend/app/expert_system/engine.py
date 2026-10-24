@@ -1,8 +1,13 @@
 import time
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from .rules import RULES, ProductionRule
 
-def calculate_health_score(ds_summary: Dict[str, Any], columns_facts: Dict[str, Any], high_corr_pairs: List[Any]) -> Dict[str, Any]:
+def calculate_health_score(
+    ds_summary: Dict[str, Any],
+    columns_facts: Dict[str, Any],
+    high_corr_pairs: List[Any],
+    repair_count: int = 0,
+) -> Dict[str, Any]:
     total_cols = max(1, ds_summary["col_count"])
     num_cols = max(1, ds_summary["type_counts"]["numerical_continuous"] + ds_summary["type_counts"]["numerical_discrete"])
     cat_cols = max(1, ds_summary["type_counts"]["categorical_nominal"] + ds_summary["type_counts"]["categorical_ordinal"])
@@ -68,6 +73,9 @@ def calculate_health_score(ds_summary: Dict[str, Any], columns_facts: Dict[str, 
         critical_issues.append(f"{corr_count} highly collinear feature pairs (VIF risk)")
     if outlier_count > 0:
         critical_issues.append(f"{outlier_count} continuous features with heavy outlier leverage")
+    hidden_dups = ds_summary.get("hidden_duplicate_rows", 0)
+    if hidden_dups > 0:
+        critical_issues.append(f"{hidden_dups} rows are duplicates once ID columns are ignored")
 
     if not critical_issues:
         diagnosis = "Dataset is remarkably clean and well-structured, requiring minor scaling and standard encoding."
@@ -84,10 +92,11 @@ def calculate_health_score(ds_summary: Dict[str, Any], columns_facts: Dict[str, 
             "encoding_readiness": round(encoding_readiness_score, 1)
         },
         "executive_diagnosis": diagnosis,
-        "critical_issues": critical_issues
+        "critical_issues": critical_issues,
+        "repairs_applied": repair_count,  # informational: not a problem with the data, and not in the score
     }
 
-def run_expert_inference(dataset_facts: Dict[str, Any]) -> Dict[str, Any]:
+def run_expert_inference(dataset_facts: Dict[str, Any], repairs: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
     """
     Evaluates dataset facts against the Production Rule Base.
     Generates:
@@ -95,7 +104,9 @@ def run_expert_inference(dataset_facts: Dict[str, Any]) -> Dict[str, Any]:
       - Synthesized column preprocessing recipes
       - Cognitive Reasoning Trace (audit log)
       - Health Score & Executive Diagnosis
+    `repairs` are the data-quality repairs the sanitizer already applied; they are logged in the trace.
     """
+    repairs = repairs or []
     ds_summary = dataset_facts["dataset_summary"]
     columns_facts = dataset_facts["columns"]
     high_corr_pairs = dataset_facts.get("high_correlation_pairs", [])
@@ -110,7 +121,16 @@ def run_expert_inference(dataset_facts: Dict[str, Any]) -> Dict[str, Any]:
         })
 
     log_step("INGESTION_AUDIT", f"Analyzing tabular structure: {ds_summary['row_count']} rows x {ds_summary['col_count']} columns ({ds_summary['memory_mb']} MB).")
-    
+    if ds_summary["row_count"] < 2:
+        log_step("DATASET_WARNING", "Dataset has fewer than 2 rows. Variance, constants, correlations and outliers cannot be judged, so no column is classified as constant and results are only indicative.")
+
+    for repair in repairs:
+        log_step(
+            "DATA_QUALITY_REPAIR",
+            f"[{repair['rule_id']}] {repair['rule_name']} on '{repair['column']}': {repair['affected_count']} cell(s) repaired. {repair['description']}",
+            repair,
+        )
+
     # Check duplicates
     if ds_summary["duplicate_rows"] > 0:
         log_step("INTEGRITY_CHECK", f"Identified {ds_summary['duplicate_rows']} exact duplicate records ({ds_summary['duplicate_pct']}%). Triggered dataset-level pruning recommendation.")
@@ -119,6 +139,20 @@ def run_expert_inference(dataset_facts: Dict[str, Any]) -> Dict[str, Any]:
 
     column_recommendations: Dict[str, Dict[str, Any]] = {}
     triggered_rules_log: List[Dict[str, Any]] = []
+
+    # R-INT-01: rows that only look unique because of an ID column
+    hidden_dups = ds_summary.get("hidden_duplicate_rows", 0)
+    if hidden_dups > 0:
+        log_step("INTEGRITY_CHECK", f"[R-INT-01] {hidden_dups} row(s) are duplicates once identifier columns are ignored (they differ only by an ID). The preprocessor deduplicates on the non-identifier columns.")
+        triggered_rules_log.append({
+            "column": "(dataset)",
+            "rule_id": "R-INT-01",
+            "rule_name": "Duplicates Hidden by Identifiers",
+            "category": "DATASET_LEVEL",
+            "severity": "WARNING",
+            "confidence": 0.93,
+            "action_type": "drop_duplicates_ignoring_ids"
+        })
 
     for col_name, col_fact in columns_facts.items():
         col_recs: List[Dict[str, Any]] = []
@@ -164,6 +198,10 @@ def run_expert_inference(dataset_facts: Dict[str, Any]) -> Dict[str, Any]:
         if imputation_step is None and imputation_candidates:
             imputation_step = max(imputation_candidates, key=lambda r: r.get("confidence", 0))
 
+        # R-IMP-07: co-missing columns keep a missing-indicator next to the imputed value
+        if imputation_step is not None and any(r["rule_id"] == "R-IMP-07" for r in col_recs):
+            imputation_step["parameters"]["add_indicator"] = True
+
         encoding_step = next((r for r in col_recs if r["category"] == "ENCODING"), None)
         scaling_steps = [r for r in col_recs if r["category"] == "SCALING_OUTLIERS"]
         filtering_step = next((r for r in col_recs if r["category"] == "FILTERING_LEAKAGE" and r["action"] == "drop_column"), None)
@@ -207,7 +245,7 @@ def run_expert_inference(dataset_facts: Dict[str, Any]) -> Dict[str, Any]:
 
     log_step("MULTICOLLINEARITY_AUDIT", f"Evaluated Pearson correlation matrix across numeric dimensions. Found {len(high_corr_pairs)} high-correlation pairs (|r| >= 0.75).")
 
-    health = calculate_health_score(ds_summary, columns_facts, high_corr_pairs)
+    health = calculate_health_score(ds_summary, columns_facts, high_corr_pairs, repair_count=len(repairs))
     log_step("HEALTH_ASSESSMENT", f"Synthesized composite ML Readiness Index: {health['overall_score']}/100 (Grade {health['grade']}).")
 
     return {

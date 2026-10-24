@@ -16,6 +16,7 @@ class DatasetMetadataModel(BaseModel):
     rows: int
     columns: int
     sheet_name: Optional[str] = None
+    all_sheets: Optional[List[str]] = None
     sample_name: Optional[str] = None
 
 
@@ -27,6 +28,7 @@ class DatasetSummaryModel(BaseModel):
     overall_missing_pct: float
     duplicate_rows: int
     duplicate_pct: float
+    hidden_duplicate_rows: int = 0
     memory_mb: float
     type_counts: Dict[str, int]
     columns_with_missing: int
@@ -95,6 +97,8 @@ class ColumnFactModel(BaseModel):
     is_constant: bool
     is_binary: bool
     is_identifier: bool
+    dominant_value_pct: float = 0.0
+    is_quasi_constant: bool = False
     ordinal_order: Optional[List[str]] = None
     sample_values: List[str] = Field(default_factory=list)
     numeric_stats: Optional[NumericStatsModel] = None
@@ -131,6 +135,7 @@ class HealthScoreModel(BaseModel):
     sub_scores: HealthSubScoresModel
     executive_diagnosis: str
     critical_issues: List[str] = Field(default_factory=list)
+    repairs_applied: int = 0
 
 
 class ReasoningStepModel(BaseModel):
@@ -175,7 +180,24 @@ class InferenceModel(BaseModel):
     health_score: HealthScoreModel
     reasoning_trace: List[ReasoningStepModel] = Field(default_factory=list)
     triggered_rules_count: int
+    triggered_rules_log: List[Dict[str, Any]] = Field(default_factory=list)
     column_recommendations: Dict[str, ColumnRecommendationModel]
+
+
+class RepairExampleModel(BaseModel):
+    before: str
+    after: str
+
+
+class DataRepairModel(BaseModel):
+    rule_id: str
+    rule_name: str
+    column: str
+    severity: str  # WARNING, INFO, CRITICAL
+    affected_count: int
+    description: str
+    examples: List[RepairExampleModel] = Field(default_factory=list)
+    replay: Dict[str, Any] = Field(default_factory=dict)  # exact parameters to repeat the repair on a raw file
 
 
 class AnalysisResponseModel(BaseModel):
@@ -184,6 +206,7 @@ class AnalysisResponseModel(BaseModel):
     inference: InferenceModel
     pipeline_code: str
     preview: List[Dict[str, Any]]
+    repairs: List[DataRepairModel] = Field(default_factory=list)
     session_id: Optional[str] = None
 
 
@@ -209,6 +232,7 @@ class ProcessRequestModel(BaseModel):
     column_overrides: Optional[Dict[str, RecipeOverrideModel]] = Field(default_factory=dict)
     drop_duplicates: Optional[bool] = True
     target_variable: Optional[str] = None
+    target_column: Optional[str] = None  # protected supervised target; wins over target_variable
 
 
 class FeatureImportanceModel(BaseModel):

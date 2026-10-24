@@ -2,7 +2,8 @@ import io
 import csv
 import os
 import json
-from typing import Tuple, Dict, Any
+import zipfile
+from typing import Tuple, Dict, Any, List, Optional
 import pandas as pd
 
 def sniff_delimiter(sample_text: str) -> str:
@@ -36,10 +37,52 @@ def detect_encoding(raw_bytes: bytes) -> str:
             continue
     return 'utf-8'
 
-def load_file_to_dataframe(file_bytes: bytes, filename: str) -> Tuple[pd.DataFrame, Dict[str, Any]]:
+def json_records_to_dataframe(records: List[Any]) -> pd.DataFrame:
+    """
+    Builds a DataFrame from a list of JSON records. Nested objects become flat columns
+    ({"b": {"x": 1}} -> column "b.x"); any list/dict left in a cell is stored as a JSON string
+    so every cell is hashable (needed for duplicate detection and value counts).
+    """
+    if records and all(isinstance(r, dict) for r in records):
+        df = pd.json_normalize(records, sep=".")
+    else:
+        df = pd.DataFrame(records)
+    for col in df.columns:
+        if df[col].dtype == object:
+            df[col] = df[col].map(
+                lambda v: json.dumps(v, ensure_ascii=False) if isinstance(v, (list, dict)) else v
+            )
+    return df
+
+
+def parse_json_text(text: str, filename: str) -> pd.DataFrame:
+    """Parses a JSON document (list of records, or an object wrapping one) or JSON Lines."""
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        # Not one JSON document: try JSON Lines (one record per line)
+        try:
+            records = [json.loads(line) for line in text.splitlines() if line.strip()]
+        except json.JSONDecodeError as e:
+            raise ValueError(f"File '{filename}' is not valid JSON or JSON Lines ({e.msg} at line {e.lineno}).") from e
+        return json_records_to_dataframe(records)
+
+    if isinstance(data, list):
+        return json_records_to_dataframe(data)
+    if isinstance(data, dict):
+        # Try records, data, or items if present
+        for key in ['data', 'records', 'items', 'rows']:
+            if key in data and isinstance(data[key], list):
+                return json_records_to_dataframe(data[key])
+        return json_records_to_dataframe([data])
+    raise ValueError(f"File '{filename}' must contain a JSON list of records or an object, not a single value.")
+
+
+def load_file_to_dataframe(file_bytes: bytes, filename: str, sheet: Optional[str] = None) -> Tuple[pd.DataFrame, Dict[str, Any]]:
     """
     Parses incoming raw file bytes into a clean pandas DataFrame.
     Supports CSV, TSV, TXT, Excel (XLSX, XLS), JSON (records/split/lines), Parquet, Feather.
+    `sheet` picks an Excel sheet by name (default: the first sheet).
     """
     ext = os.path.splitext(filename)[1].lower()
     file_size_kb = round(len(file_bytes) / 1024, 2)
@@ -77,36 +120,23 @@ def load_file_to_dataframe(file_bytes: bytes, filename: str) -> Tuple[pd.DataFra
 
     elif ext in ['.xlsx', '.xls']:
         metadata["format"] = "excel"
-        excel_file = pd.ExcelFile(io.BytesIO(file_bytes))
-        sheet_name = excel_file.sheet_names[0]
+        try:
+            excel_file = pd.ExcelFile(io.BytesIO(file_bytes))
+        except (ValueError, zipfile.BadZipFile) as e:
+            raise ValueError(f"File '{filename}' is not a valid Excel workbook.") from e
+        if sheet is not None and sheet not in excel_file.sheet_names:
+            raise ValueError(f"Sheet '{sheet}' not found. Available sheets: {', '.join(excel_file.sheet_names)}")
+        sheet_name = sheet if sheet is not None else excel_file.sheet_names[0]
         metadata["sheet_name"] = sheet_name
         metadata["all_sheets"] = excel_file.sheet_names
-        df = excel_file.parse(sheet_name)
+        df = pd.read_excel(excel_file, sheet_name=sheet_name)
 
     elif ext in ['.json', '.jsonl', '.ndjson']:
         metadata["format"] = "json"
         encoding = detect_encoding(file_bytes)
         metadata["detected_encoding"] = encoding
         text = file_bytes.decode(encoding, errors='ignore')
-        
-        try:
-            # Try reading as JSON records or standard json
-            data = json.loads(text)
-            if isinstance(data, list):
-                df = pd.DataFrame(data)
-            elif isinstance(data, dict):
-                # Try records, data, or items if present
-                for key in ['data', 'records', 'items', 'rows']:
-                    if key in data and isinstance(data[key], list):
-                        df = pd.DataFrame(data[key])
-                        break
-                else:
-                    df = pd.DataFrame([data])
-            else:
-                df = pd.read_json(io.StringIO(text))
-        except Exception:
-            # Fallback to json lines
-            df = pd.read_json(io.StringIO(text), lines=True)
+        df = parse_json_text(text, filename)
 
     elif ext in ['.parquet', '.pqt']:
         metadata["format"] = "parquet"

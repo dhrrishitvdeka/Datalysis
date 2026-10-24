@@ -1,17 +1,33 @@
 from dataclasses import dataclass, field
 from typing import Dict, Any, List, Optional, Callable
+from .encoding import binary_mapping
 
 @dataclass
 class ProductionRule:
     rule_id: str
     name: str
-    category: str  # IMPUTATION, ENCODING, SCALING_OUTLIERS, FILTERING_LEAKAGE, DATETIME, DATASET_LEVEL
+    category: str  # IMPUTATION, MISSINGNESS_STRUCTURE, ENCODING, SCALING_OUTLIERS, FILTERING_LEAKAGE, DATETIME, DATASET_LEVEL
     severity: str  # CRITICAL, WARNING, OPTIMIZATION, INFO
     confidence: float  # 0.0 to 1.0
     description: str
     condition: Callable[[Dict[str, Any], Dict[str, Any]], bool]
     action_type: str
     generate_recommendation: Callable[[Dict[str, Any], Dict[str, Any]], Dict[str, Any]]
+
+def binary_mapping_parameter(col_fact: Dict[str, Any]) -> Dict[str, int]:
+    """The deterministic 0/1 mapping the preprocessor will apply (see encoding.binary_mapping)."""
+    top = (col_fact.get("categorical_stats") or {}).get("top_categories", [])
+    mapping = binary_mapping([c["category"] for c in top][:2])
+    return {str(k): v for k, v in mapping.items()}
+
+
+def in_structured_missingness(col_fact: Dict[str, Any], ds_fact: Dict[str, Any]) -> bool:
+    """True when this column goes missing together with another column (missingness correlation >= 0.5)."""
+    return any(
+        col_fact["name"] in (p["feature_a"], p["feature_b"]) and p["correlation"] >= 0.5
+        for p in ds_fact.get("missing_corr_pairs", [])
+    )
+
 
 # Production Rules Database
 RULES: List[ProductionRule] = [
@@ -143,6 +159,33 @@ RULES: List[ProductionRule] = [
         }
     ),
 
+    ProductionRule(
+        rule_id="R-IMP-07",
+        name="Structured (Co-occurring) Missingness Indicator",
+        category="MISSINGNESS_STRUCTURE",
+        severity="INFO",
+        confidence=0.86,
+        description="Flags columns that go missing together (missingness correlation >= 0.5) and adds a missing-indicator feature.",
+        condition=lambda col_fact, ds_fact: (
+            0 < col_fact["missing_pct"] < 70.0 and in_structured_missingness(col_fact, ds_fact)
+        ),
+        action_type="add_missing_indicator",
+        generate_recommendation=lambda col_fact, ds_fact: {
+            "action": "add_missing_indicator",
+            "technique": "Missing-Indicator Feature (<col>_was_missing)",
+            "parameters": {
+                "add_indicator": True,
+                "co_missing_with": sorted({
+                    p["feature_b"] if p["feature_a"] == col_fact["name"] else p["feature_a"]
+                    for p in ds_fact.get("missing_corr_pairs", [])
+                    if col_fact["name"] in (p["feature_a"], p["feature_b"]) and p["correlation"] >= 0.5
+                })
+            },
+            "rationale": f"Column '{col_fact['name']}' is missing in the same rows as other columns (missingness correlation >= 0.5). That pattern is unlikely to be Missing Completely At Random; it is probably Missing At Random or structural (e.g. a whole block of fields not collected for some records). The fact that a value is missing can itself predict the outcome, so a '{col_fact['name']}_was_missing' indicator is kept next to the imputed value.",
+            "impact": "Preserves the missingness pattern as an explicit signal instead of hiding it behind imputation."
+        }
+    ),
+
     # ----------------------------------------------------
     # ENCODING RULES (R-ENC)
     # ----------------------------------------------------
@@ -162,7 +205,7 @@ RULES: List[ProductionRule] = [
         generate_recommendation=lambda col_fact, ds_fact: {
             "action": "encode_binary",
             "technique": "Binary Integer Mapping (0/1)",
-            "parameters": {"mapping": {str(s): i for i, s in enumerate(col_fact.get("sample_values", [])[:2])}},
+            "parameters": {"mapping": binary_mapping_parameter(col_fact)},
             "rationale": f"Feature '{col_fact['name']}' has exactly 2 distinct classes. Mapping to binary integers (0 and 1) adds zero dimensional overhead and is universally compatible with all ML algorithms.",
             "impact": "Zero dimensionality growth, compact representation."
         }
@@ -388,6 +431,24 @@ RULES: List[ProductionRule] = [
             },
             "rationale": f"Feature '{col_fact['name']}' has high multicollinearity (|r| >= 0.85) with peer features. Collinearity inflates parameter variance and creates unstable coefficient signs in regression models.",
             "impact": "Reduces feature redundancy and prevents variance inflation."
+        }
+    ),
+
+    ProductionRule(
+        rule_id="R-FLT-04",
+        name="Quasi-Constant (Near-Zero Variance) Feature",
+        category="FILTERING_LEAKAGE",
+        severity="WARNING",
+        confidence=0.88,
+        description="Flags columns where one value covers at least 99% of non-null rows; advisory, the column is not dropped automatically.",
+        condition=lambda col_fact, ds_fact: col_fact.get("is_quasi_constant", False) and not col_fact["is_constant"],
+        action_type="flag_quasi_constant",
+        generate_recommendation=lambda col_fact, ds_fact: {
+            "action": "flag_quasi_constant",
+            "technique": "Review for Removal (Near-Zero Variance)",
+            "parameters": {"dominant_value_pct": col_fact["dominant_value_pct"]},
+            "rationale": f"A single value covers {col_fact['dominant_value_pct']}% of the non-null rows in '{col_fact['name']}'. Near-zero variance means the column almost never separates one row from another, so a model can rarely learn from it, and in cross-validation folds it can become exactly constant. Consider dropping it, unless the rare values are the signal (e.g. a fraud flag).",
+            "impact": "Highlights a feature with almost no discriminating power; kept by default because the rare values may matter."
         }
     ),
 
