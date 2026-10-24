@@ -65,9 +65,10 @@ Datalysis's inference engine is purely deterministic and rule-driven. To add a n
    - `R-DIST-*`: Distribution, scaling, and outlier rules
    - `R-FLT-*`: Filtering, leakage, and collinearity rules
    - `R-DAT-*`: Datetime engineering rules
+   - `R-QLT-*`: Data-quality repair rules (these live in [`sanitizer.py`](backend/app/expert_system/sanitizer.py), not `rules.py`; they run before profiling)
 3. Define rule conditions against `ColumnFact` and `DatasetFacts` (extracted in `fact_extractor.py`).
 4. Ensure the rule returns:
-   - `rule_id`: Unique identifier (e.g. `R-IMP-07`)
+   - `rule_id`: Unique identifier (e.g. `R-IMP-08`)
    - `confidence`: Heuristic certainty float between `0.0` and `1.0`
    - `rationale`: Clear mathematical/statistical justification
    - `technique`: Name of the concrete Scikit-Learn or data-cleaning transformation
@@ -80,13 +81,17 @@ Datalysis's inference engine is purely deterministic and rule-driven. To add a n
 Always ensure the entire test suite passes before submitting a pull request:
 
 ```bash
-# Set PYTHONPATH to project root
+# pytest (reads pyproject.toml, so no PYTHONPATH needed)
+pip install -e ".[dev]"   # or: pip install pytest
+python -m pytest -q
+
+# unittest, exactly what CI runs
 # Windows (PowerShell):
 $env:PYTHONPATH="."
-python -m unittest discover tests
+python -m unittest discover -s tests -v
 
 # Linux / macOS:
-PYTHONPATH=. python -m unittest discover tests
+PYTHONPATH=. python -m unittest discover -s tests -v
 ```
 
 If you modified the frontend, verify that the TypeScript bundle compiles cleanly:
