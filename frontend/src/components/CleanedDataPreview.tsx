@@ -1,24 +1,10 @@
-import React, { useState } from 'react';
-import {
-  Play,
-  Download,
-  CheckCircle2,
-  FileCheck,
-  FileSpreadsheet,
-  Database,
-  BookOpen,
-  Code2,
-  ChevronDown,
-} from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { BookOpen, ChevronDown, Code2, Database, Download, FileCheck, FileSpreadsheet, Play } from 'lucide-react';
 import type { CleaningReport, ProcessRequest, RecipeOverride } from '../types';
-import {
-  executePreprocessing,
-  getCleanedDownloadUrl,
-  getNotebookDownloadUrl,
-  getSchemaDownloadUrl,
-} from '../services/api';
+import { executePreprocessing, getCleanedDownloadUrl, getNotebookDownloadUrl, getSchemaDownloadUrl } from '../services/api';
 import { DataDiffViewer } from './DataDiffViewer';
 import { TargetNote } from './TargetNote';
+import { Badge, EmptyState, Notice } from './ui';
 
 interface CleanedDataPreviewProps {
   initialReport: CleaningReport | null;
@@ -27,6 +13,15 @@ interface CleanedDataPreviewProps {
   targetColumn?: string | null;
   onReportChange?: (report: CleaningReport) => void;
 }
+
+const DOWNLOADS = [
+  { icon: Download, label: 'CSV', detail: '.csv', href: () => getCleanedDownloadUrl('csv') },
+  { icon: FileSpreadsheet, label: 'Excel', detail: '.xlsx, multi-sheet', href: () => getCleanedDownloadUrl('excel') },
+  { icon: Database, label: 'Parquet', detail: '.parquet', href: () => getCleanedDownloadUrl('parquet') },
+  { icon: Database, label: 'SQLite database', detail: '.db', href: () => getCleanedDownloadUrl('sqlite') },
+  { icon: BookOpen, label: 'Jupyter notebook', detail: '.ipynb, the pipeline explained', href: () => getNotebookDownloadUrl() },
+  { icon: Code2, label: 'Pandera schema', detail: '.py, validates future data', href: () => getSchemaDownloadUrl() },
+];
 
 export const CleanedDataPreview: React.FC<CleanedDataPreviewProps> = ({
   initialReport,
@@ -38,18 +33,33 @@ export const CleanedDataPreview: React.FC<CleanedDataPreviewProps> = ({
   const [report, setReport] = useState<CleaningReport | null>(initialReport);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [exportMenuOpen, setExportMenuOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const overrides = Object.keys(customRecipe).length;
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setMenuOpen(false);
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [menuOpen]);
 
   const handleRunPreprocessing = async () => {
     setLoading(true);
     setError(null);
     try {
       // The target lets the backend protect it; with no overrides and no target the body stays empty
-      const hasOverrides = Object.keys(customRecipe).length > 0;
       const payload: ProcessRequest | undefined =
-        hasOverrides || targetColumn
+        overrides > 0 || targetColumn
           ? {
-              ...(hasOverrides && { column_overrides: customRecipe }),
+              ...(overrides > 0 && { column_overrides: customRecipe }),
               ...(targetColumn && { target_column: targetColumn }),
             }
           : undefined;
@@ -64,168 +74,92 @@ export const CleanedDataPreview: React.FC<CleanedDataPreviewProps> = ({
   };
 
   return (
-    <div className="space-y-4">
-      {/* Action Header */}
-      <div className="p-5 rounded-xl glass-card flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-        <div className="space-y-1">
-          <div className="flex items-center space-x-2">
-            <FileCheck className="w-4 h-4 text-emerald-400" />
-            <h3 className="text-sm font-semibold text-white font-mono">
-              In-Memory Pipeline Execution & Export
-            </h3>
-            {Object.keys(customRecipe).length > 0 && (
-              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                Custom Recipe Active ({Object.keys(customRecipe).length} overrides)
-              </span>
-            )}
-          </div>
-          <p className="text-xs text-zinc-400">
-            Executes full deterministic transformations: column pruning, imputation, Winsorization, power transforms, and feature encoding.
+    <div className="space-y-5">
+      <section className="panel flex flex-wrap items-center justify-between gap-4 p-5">
+        <div className="max-w-2xl">
+          <h2 className="panel-title flex flex-wrap items-center gap-2">
+            {report ? 'Cleaning finished' : 'Ready to clean'}
+            {overrides > 0 && <Badge tone="accent">Your recipe: {overrides} edited</Badge>}
+          </h2>
+          <p className="panel-sub">
+            Drops columns, fills gaps, treats outliers, scales and encodes, following {overrides > 0 ? 'your edited recipe' : 'the recommended recipe'}.
           </p>
         </div>
 
-        <div className="flex items-center space-x-2 w-full sm:w-auto relative">
-          <button
-            onClick={handleRunPreprocessing}
-            disabled={loading}
-            className="flex-1 sm:flex-none px-3.5 py-1.5 rounded-lg bg-zinc-100 hover:bg-white disabled:opacity-30 text-zinc-950 text-xs font-semibold flex items-center justify-center space-x-1.5 transition"
-          >
+        <div className="flex items-center gap-2">
+          <button type="button" className="btn btn-primary" onClick={handleRunPreprocessing} disabled={loading}>
             {loading ? (
-              <span className="flex items-center space-x-2">
-                <span className="w-3 h-3 border-2 border-zinc-950/30 border-t-zinc-950 rounded-full animate-spin" />
-                <span>Transforming...</span>
-              </span>
+              <>
+                <span className="h-4 w-4 animate-spin rounded-full border-2 border-accent-ink/40 border-t-accent-ink" /> Cleaning…
+              </>
             ) : (
               <>
-                <Play className="w-3.5 h-3.5 fill-current" />
-                <span>{report ? 'Re-Run Pipeline' : 'Run Preprocessing'}</span>
+                <Play className="h-4 w-4" aria-hidden /> {report ? 'Run again' : 'Run cleaning'}
               </>
             )}
           </button>
 
           {report && (
-            <div className="relative">
-              <button
-                onClick={() => setExportMenuOpen(!exportMenuOpen)}
-                className="px-3 py-1.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 text-zinc-200 text-xs font-medium flex items-center space-x-1.5 border border-white/[0.08] transition"
-              >
-                <Download className="w-3.5 h-3.5" />
-                <span>Download Dataset</span>
-                <ChevronDown className="w-3 h-3 text-zinc-400" />
+            <div className="relative" ref={menuRef}>
+              <button type="button" className="btn" aria-expanded={menuOpen} aria-haspopup="true" onClick={() => setMenuOpen((o) => !o)}>
+                <Download className="h-4 w-4" aria-hidden /> Download
+                <ChevronDown className="h-4 w-4 text-ink-3" aria-hidden />
               </button>
-
-              {exportMenuOpen && (
-                <div
-                  className="absolute right-0 mt-1 w-56 rounded-xl bg-zinc-950 border border-white/[0.1] shadow-2xl p-1.5 z-30 space-y-1 font-mono text-xs"
-                  onMouseLeave={() => setExportMenuOpen(false)}
-                >
-                  <a
-                    href={getCleanedDownloadUrl('csv')}
-                    download
-                    onClick={() => setExportMenuOpen(false)}
-                    className="flex items-center space-x-2 px-2.5 py-1.5 rounded-lg hover:bg-zinc-800 text-zinc-300 hover:text-white transition"
-                  >
-                    <Download className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>CSV (.csv)</span>
-                  </a>
-                  <a
-                    href={getCleanedDownloadUrl('excel')}
-                    download
-                    onClick={() => setExportMenuOpen(false)}
-                    className="flex items-center space-x-2 px-2.5 py-1.5 rounded-lg hover:bg-zinc-800 text-zinc-300 hover:text-white transition"
-                  >
-                    <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>Excel (.xlsx Multi-Sheet)</span>
-                  </a>
-                  <a
-                    href={getCleanedDownloadUrl('parquet')}
-                    download
-                    onClick={() => setExportMenuOpen(false)}
-                    className="flex items-center space-x-2 px-2.5 py-1.5 rounded-lg hover:bg-zinc-800 text-zinc-300 hover:text-white transition"
-                  >
-                    <Database className="w-3.5 h-3.5 text-blue-400" />
-                    <span>Parquet (.parquet)</span>
-                  </a>
-                  <a
-                    href={getCleanedDownloadUrl('sqlite')}
-                    download
-                    onClick={() => setExportMenuOpen(false)}
-                    className="flex items-center space-x-2 px-2.5 py-1.5 rounded-lg hover:bg-zinc-800 text-zinc-300 hover:text-white transition"
-                  >
-                    <Database className="w-3.5 h-3.5 text-purple-400" />
-                    <span>SQLite Database (.db)</span>
-                  </a>
-                  <div className="h-px bg-white/[0.08] my-1" />
-                  <a
-                    href={getNotebookDownloadUrl()}
-                    download
-                    onClick={() => setExportMenuOpen(false)}
-                    className="flex items-center space-x-2 px-2.5 py-1.5 rounded-lg hover:bg-zinc-800 text-zinc-300 hover:text-white transition"
-                  >
-                    <BookOpen className="w-3.5 h-3.5 text-amber-400" />
-                    <span>Jupyter Notebook (.ipynb)</span>
-                  </a>
-                  <a
-                    href={getSchemaDownloadUrl()}
-                    download
-                    onClick={() => setExportMenuOpen(false)}
-                    className="flex items-center space-x-2 px-2.5 py-1.5 rounded-lg hover:bg-zinc-800 text-zinc-300 hover:text-white transition"
-                  >
-                    <Code2 className="w-3.5 h-3.5 text-indigo-400" />
-                    <span>Pandera Schema (.py)</span>
-                  </a>
+              {menuOpen && (
+                <div className="absolute right-0 z-30 mt-2 w-72 rounded-xl bg-surface p-1.5 shadow-pop">
+                  {DOWNLOADS.map(({ icon: Icon, label, detail, href }, i) => (
+                    <React.Fragment key={label}>
+                      {i === 4 && <div className="my-1 h-px bg-line" />}
+                      <a
+                        href={href()}
+                        download
+                        onClick={() => setMenuOpen(false)}
+                        className="flex items-start gap-3 rounded-lg px-3 py-2 hover:bg-sunken"
+                      >
+                        <Icon className="mt-0.5 h-4 w-4 shrink-0 text-ink-3" aria-hidden />
+                        <span>
+                          <span className="block text-sm font-medium">{label}</span>
+                          <span className="block text-xs text-ink-3">{detail}</span>
+                        </span>
+                      </a>
+                    </React.Fragment>
+                  ))}
                 </div>
               )}
             </div>
           )}
         </div>
-      </div>
+      </section>
 
       <TargetNote target={targetColumn} />
-
       {error && (
-        <div className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs font-mono">
+        <Notice tone="bad" title="Cleaning failed">
           {error}
-        </div>
+        </Notice>
       )}
 
-      {/* Side-by-Side Diff Viewer and Execution Trace */}
       {report ? (
-        <div className="space-y-4">
-          <DataDiffViewer
-            rawPreview={rawPreview}
-            cleanedPreview={report.preview}
-            report={report}
-          />
+        <>
+          <DataDiffViewer rawPreview={rawPreview} cleanedPreview={report.preview} report={report} />
 
-          {/* Steps Executed Log */}
-          <div className="p-4 rounded-xl glass-card space-y-2">
-            <h4 className="text-xs font-mono font-semibold uppercase tracking-wider text-zinc-300 flex items-center space-x-2">
-              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Transformation Steps Executed ({report.steps_executed.length})</span>
-            </h4>
-            <div className="space-y-1.5 text-xs font-mono text-zinc-400 max-h-48 overflow-y-auto pr-2">
-              {report.steps_executed.map((step, idx) => (
-                <div key={idx} className="flex items-start space-x-2">
-                  <span className="text-emerald-400 font-bold shrink-0">✓</span>
-                  <span>{step}</span>
-                </div>
-              ))}
+          <section className="panel overflow-hidden">
+            <div className="panel-head">
+              <h3 className="panel-title">Steps that ran ({report.steps_executed.length})</h3>
             </div>
-          </div>
-        </div>
+            <ol className="max-h-72 divide-y divide-line overflow-y-auto">
+              {report.steps_executed.map((step, idx) => (
+                <li key={idx} className="grid grid-cols-[2.5rem_minmax(0,1fr)] gap-x-3 px-5 py-2.5 text-sm">
+                  <span className="text-right font-mono tabular-nums text-ink-3">{idx + 1}</span>
+                  <span className="text-ink-2">{step}</span>
+                </li>
+              ))}
+            </ol>
+          </section>
+        </>
       ) : (
-        <div className="p-12 text-center rounded-xl glass-card space-y-3">
-          <div className="w-12 h-12 rounded-full bg-zinc-900 border border-white/[0.08] flex items-center justify-center mx-auto text-zinc-400">
-            <FileCheck className="w-6 h-6" />
-          </div>
-          <div className="space-y-1">
-            <h4 className="text-sm font-semibold text-zinc-200 font-mono">Ready to Clean Dataset</h4>
-            <p className="text-xs text-zinc-500 max-w-md mx-auto">
-              Click "Run Preprocessing" above to execute the automated expert rules and generate the cleaned matrix with side-by-side diff.
-            </p>
-          </div>
-        </div>
+        <EmptyState icon={FileCheck} title="Nothing has been cleaned yet">
+          Choose “Run cleaning” to apply the recipe. You will see the data before and after, side by side, and can then download it.
+        </EmptyState>
       )}
     </div>
   );

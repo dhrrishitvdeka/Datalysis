@@ -9,11 +9,12 @@ interface TargetNoteProps {
 export const TargetNote: React.FC<TargetNoteProps> = ({ target }) => {
   if (!target) return null;
   return (
-    <div className="px-3 py-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-xs font-mono flex items-center gap-2">
-      <Target className="w-3.5 h-3.5 shrink-0" />
+    <p className="flex items-start gap-3 rounded-lg bg-accent-soft px-4 py-3 text-sm text-ink-2">
+      <Target className="mt-0.5 h-4 w-4 shrink-0 text-accent" aria-hidden />
       <span>
-        Target '{target}' is protected: never transformed, rows with a missing target are dropped, and it is kept as the last column.
+        <strong className="font-mono text-ink">{target}</strong> is your target, so it is never transformed. Rows where it is missing
+        are dropped, and it is kept as the last column.
       </span>
-    </div>
+    </p>
   );
 };

@@ -1,90 +1,87 @@
-import React, { useState } from 'react';
-import { Terminal, ChevronDown, ChevronUp, Copy, Check, Wrench, AlertTriangle } from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { AlertTriangle, Check, Copy, Wrench } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { ReasoningStep } from '../types';
+import { Badge } from './ui';
+import type { Tone } from './ui';
 
 interface ReasoningTraceProps {
   trace: ReasoningStep[];
   rulesCount: number;
 }
 
-// Phases that deserve attention get an icon and a colour; every other phase keeps the neutral badge
-const PHASE_STYLE: Record<string, { icon: LucideIcon; cls: string }> = {
-  DATA_QUALITY_REPAIR: { icon: Wrench, cls: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' },
-  DATASET_WARNING: { icon: AlertTriangle, cls: 'bg-amber-500/10 text-amber-400 border-amber-500/20' },
+// Phases that deserve attention get a tone and an icon; every other phase stays neutral
+const PHASE_STYLE: Record<string, { icon: LucideIcon; tone: Tone }> = {
+  DATA_QUALITY_REPAIR: { icon: Wrench, tone: 'good' },
+  DATASET_WARNING: { icon: AlertTriangle, tone: 'warn' },
 };
-const DEFAULT_PHASE_CLS = 'bg-zinc-900 text-zinc-400 border-zinc-800';
+
+const phaseLabel = (p: string) => {
+  const words = p.toLowerCase().replace(/_/g, ' ');
+  return words.charAt(0).toUpperCase() + words.slice(1);
+};
 
 export const ReasoningTrace: React.FC<ReasoningTraceProps> = ({ trace, rulesCount }) => {
-  const [isOpen, setIsOpen] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [phase, setPhase] = useState<string | null>(null);
+
+  const phases = useMemo(() => Array.from(new Set(trace.map((t) => t.phase))), [trace]);
+  const shown = useMemo(
+    () => trace.map((step, i) => ({ step, n: i + 1 })).filter(({ step }) => !phase || step.phase === phase),
+    [trace, phase]
+  );
 
   const handleCopy = () => {
-    const text = trace.map(t => `[${t.phase}] ${t.message}`).join('\n');
+    const text = trace.map((t) => `[${t.phase}] ${t.message}`).join('\n');
     navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
 
   return (
-    <div className="rounded-xl glass-card overflow-hidden">
-      {/* Header bar */}
-      <div
-        onClick={() => setIsOpen(!isOpen)}
-        className="px-4 py-2.5 flex items-center justify-between bg-zinc-950/80 cursor-pointer hover:bg-zinc-900/60 transition"
-      >
-        <div className="flex items-center space-x-2.5">
-          <Terminal className="w-4 h-4 text-zinc-400" />
-          <div className="flex items-center space-x-2">
-            <span className="text-xs font-medium text-zinc-300">
-              Expert Rule Inference Stream
-            </span>
-            <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-zinc-900 text-zinc-400 border border-white/[0.06]">
-              {rulesCount} Rules Evaluated
-            </span>
-          </div>
+    <section className="panel overflow-hidden" aria-label="Rule log">
+      <div className="panel-head">
+        <div>
+          <h2 className="panel-title">{trace.length} steps, {rulesCount} rules evaluated</h2>
+          <p className="panel-sub">Filter by phase to follow one part of the analysis.</p>
         </div>
-
-        <div className="flex items-center space-x-2">
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              handleCopy();
-            }}
-            className="p-1 rounded text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition"
-            title="Copy audit log"
-          >
-            {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-          </button>
-          {isOpen ? <ChevronUp className="w-4 h-4 text-zinc-400" /> : <ChevronDown className="w-4 h-4 text-zinc-400" />}
-        </div>
+        <button type="button" className="btn btn-sm" onClick={handleCopy}>
+          {copied ? <Check className="h-4 w-4 text-good" aria-hidden /> : <Copy className="h-4 w-4" aria-hidden />}
+          {copied ? 'Copied' : 'Copy log'}
+        </button>
       </div>
 
-      {/* Expandable Body */}
-      {isOpen && (
-        <div className="p-3 bg-black/90 font-mono text-xs space-y-1.5 max-h-64 overflow-y-auto border-t border-white/[0.04]">
-          {trace.map((step, idx) => {
-            const style = PHASE_STYLE[step.phase];
-            const PhaseIcon = style?.icon;
-            return (
-              <div key={idx} className="flex items-start space-x-2 py-0.5 border-b border-zinc-900 last:border-0">
-                <span className="text-zinc-600 select-none text-[10px] mt-0.5">{(idx + 1).toString().padStart(2, '0')}</span>
-                <span
-                  className={`inline-flex items-center gap-1 text-[10px] px-1.5 py-0.2 rounded border uppercase tracking-wider font-mono ${
-                    style?.cls ?? DEFAULT_PHASE_CLS
-                  }`}
-                >
-                  {PhaseIcon && <PhaseIcon className="w-2.5 h-2.5" />}
-                  {step.phase}
-                </span>
-                <span className="text-zinc-300 leading-relaxed font-sans text-xs flex-1">
-                  {step.message}
-                </span>
-              </div>
-            );
-          })}
+      {phases.length > 1 && (
+        <div className="border-b border-line px-5 py-3">
+          <div className="seg" role="group" aria-label="Filter by phase">
+            <button type="button" aria-pressed={phase === null} onClick={() => setPhase(null)}>
+              All phases
+            </button>
+            {phases.map((p) => (
+              <button key={p} type="button" aria-pressed={phase === p} onClick={() => setPhase(phase === p ? null : p)}>
+                {phaseLabel(p)}
+              </button>
+            ))}
+          </div>
         </div>
       )}
-    </div>
+
+      <ol className="max-h-[70vh] divide-y divide-line overflow-y-auto">
+        {shown.map(({ step, n }) => {
+          const style = PHASE_STYLE[step.phase];
+          return (
+            <li key={n} className="grid grid-cols-[2.5rem_minmax(0,1fr)] gap-x-3 gap-y-1 px-5 py-3 sm:grid-cols-[2.5rem_11rem_minmax(0,1fr)]">
+              <span className="pt-0.5 text-right font-mono text-sm tabular-nums text-ink-3">{n}</span>
+              <span className="pt-0.5">
+                <Badge tone={style?.tone ?? 'neutral'} icon={style?.icon}>
+                  {phaseLabel(step.phase)}
+                </Badge>
+              </span>
+              <p className="col-start-2 text-ink-2 sm:col-start-3">{step.message}</p>
+            </li>
+          );
+        })}
+      </ol>
+    </section>
   );
 };

@@ -1,15 +1,8 @@
-import React, { useState } from 'react';
-import {
-  Target,
-  AlertTriangle,
-  Sparkles,
-  BarChart3,
-  X,
-  TrendingUp,
-  ShieldAlert,
-} from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { AlertTriangle, X } from 'lucide-react';
 import type { TargetAnalysisResponse } from '../types';
 import { analyzeTarget } from '../services/api';
+import { Badge, MeterBar, Measure, Notice } from './ui';
 
 interface SupervisedTargetModalProps {
   columns: string[];
@@ -18,16 +11,26 @@ interface SupervisedTargetModalProps {
   onTargetSelect?: (target: string) => void;
 }
 
-export const SupervisedTargetModal: React.FC<SupervisedTargetModalProps> = ({
-  columns,
-  initialTarget,
-  onClose,
-  onTargetSelect,
-}) => {
-  const [selectedCol, setSelectedCol] = useState<string>(initialTarget || (columns[0] || ''));
+const CLASS_COLORS = ['#3B82F6', '#E69F00', '#1FA37A', '#D4559C', '#9A7BE0', '#E5533D', '#17A2B8', '#8A94A6'];
+
+export const SupervisedTargetModal: React.FC<SupervisedTargetModalProps> = ({ columns, initialTarget, onClose, onTargetSelect }) => {
+  const [selectedCol, setSelectedCol] = useState<string>(initialTarget || columns[0] || '');
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [analysis, setAnalysis] = useState<TargetAnalysisResponse | null>(null);
+  const selectRef = useRef<HTMLSelectElement>(null);
+
+  useEffect(() => {
+    selectRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    document.addEventListener('keydown', onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [onClose]);
 
   const handleAnalyze = async (col: string) => {
     setSelectedCol(col);
@@ -36,9 +39,7 @@ export const SupervisedTargetModal: React.FC<SupervisedTargetModalProps> = ({
     try {
       const res = await analyzeTarget(col);
       setAnalysis(res);
-      if (onTargetSelect) {
-        onTargetSelect(col);
-      }
+      onTargetSelect?.(col);
     } catch (err: any) {
       setError(err.message || 'Failed to analyze target variable');
     } finally {
@@ -46,245 +47,164 @@ export const SupervisedTargetModal: React.FC<SupervisedTargetModalProps> = ({
     }
   };
 
+  const ci = analysis?.class_imbalance;
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="w-full max-w-4xl bg-zinc-950 border border-white/[0.1] rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-        {/* Modal Header */}
-        <div className="p-4 sm:p-5 border-b border-white/[0.08] flex items-center justify-between bg-zinc-900/60">
-          <div className="flex items-center space-x-2.5">
-            <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400">
-              <Target className="w-5 h-5" />
-            </div>
-            <div>
-              <h2 className="text-base font-semibold font-mono text-white">
-                Supervised Target Mode
-              </h2>
-              <p className="text-xs text-zinc-400">
-                Designate a target feature to evaluate problem type, class imbalance, feature utility, and leakage risks.
-              </p>
-            </div>
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/60 p-4 sm:items-center"
+      onMouseDown={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div role="dialog" aria-modal="true" aria-labelledby="target-title" className="my-auto w-full max-w-4xl overflow-hidden rounded-2xl bg-surface shadow-pop">
+        <div className="flex items-start justify-between gap-4 border-b border-line px-6 py-5">
+          <div>
+            <h2 id="target-title" className="text-xl">
+              Choose a target column
+            </h2>
+            <p className="mt-1 max-w-2xl text-sm text-ink-3">
+              The target is what you want a model to predict. Datalysis will work out the problem type, check class balance, rank the other columns by how useful they look, and warn about leakage.
+            </p>
           </div>
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition"
-          >
-            <X className="w-4 h-4" />
+          <button type="button" onClick={onClose} className="btn btn-quiet btn-icon -mr-2 -mt-1" aria-label="Close">
+            <X className="h-5 w-5" aria-hidden />
           </button>
         </div>
 
-        {/* Modal Body */}
-        <div className="p-4 sm:p-6 overflow-y-auto space-y-4 flex-1">
-          {/* Target Selection Strip */}
-          <div className="p-4 rounded-xl glass-card flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-            <div className="space-y-1">
-              <label className="text-xs font-mono uppercase tracking-wider text-zinc-400">
-                Select Prediction Target Feature:
+        <div className="space-y-6 p-6">
+          <div className="flex flex-wrap items-end gap-3">
+            <div>
+              <label htmlFor="target-select" className="field-label">
+                Target column
               </label>
-              <div className="flex items-center space-x-2">
-                <select
-                  value={selectedCol}
-                  onChange={(e) => handleAnalyze(e.target.value)}
-                  className="bg-zinc-900 border border-white/[0.15] text-zinc-100 rounded-lg px-3 py-1.5 text-xs font-mono focus:outline-none focus:border-emerald-400 transition min-w-[220px]"
-                >
-                  {columns.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  onClick={() => handleAnalyze(selectedCol)}
-                  disabled={loading}
-                  className="px-3.5 py-1.5 rounded-lg bg-zinc-100 hover:bg-white text-zinc-950 font-semibold text-xs font-mono flex items-center space-x-1.5 transition disabled:opacity-40"
-                >
-                  {loading ? (
-                    <span className="w-3.5 h-3.5 border-2 border-zinc-950/30 border-t-zinc-950 rounded-full animate-spin" />
-                  ) : (
-                    <>
-                      <Sparkles className="w-3.5 h-3.5" />
-                      <span>Run Analysis</span>
-                    </>
-                  )}
-                </button>
-              </div>
+              <select
+                id="target-select"
+                ref={selectRef}
+                value={selectedCol}
+                onChange={(e) => setSelectedCol(e.target.value)}
+                className="field min-w-[240px] font-mono"
+              >
+                {columns.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
             </div>
-
+            <button type="button" className="btn btn-primary" onClick={() => handleAnalyze(selectedCol)} disabled={loading}>
+              {loading ? (
+                <>
+                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-accent-ink/40 border-t-accent-ink" /> Analysing…
+                </>
+              ) : (
+                'Analyse target'
+              )}
+            </button>
             {analysis && (
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="px-2.5 py-1 rounded-md text-xs font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-semibold">
-                  {analysis.task_type.replace('_', ' ').toUpperCase()}
-                </span>
-                <span className="px-2.5 py-1 rounded-md text-xs font-mono bg-zinc-800 text-zinc-300 border border-white/[0.08]">
-                  {analysis.unique_count} Unique Values
-                </span>
+              <div className="flex flex-wrap items-center gap-2 pb-1.5">
+                <Badge tone="accent">{analysis.task_type.replace(/_/g, ' ')}</Badge>
+                <Badge>{analysis.unique_count} distinct values</Badge>
               </div>
             )}
           </div>
 
           {error && (
-            <div className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs font-mono">
+            <Notice tone="bad" title="Analysis failed">
               {error}
-            </div>
+            </Notice>
           )}
 
-          {/* Analysis Results Display */}
           {analysis && (
-            <div className="space-y-4">
-              {/* Executive Recommendation Banner */}
-              <div className="p-3.5 rounded-xl bg-zinc-900/80 border border-white/[0.08] flex items-start space-x-3 text-xs">
-                <Sparkles className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-                <div className="space-y-1">
-                  <span className="font-semibold text-zinc-200">Analytical Recommendation</span>
-                  <p className="text-zinc-400">{analysis.recommendation}</p>
-                </div>
-              </div>
+            <div className="space-y-6">
+              <Notice tone="info" title="Recommendation">
+                {analysis.recommendation}
+              </Notice>
 
-              {/* Data Leakage Warning Alert */}
               {analysis.leakage_warnings.length > 0 && (
-                <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/30 space-y-1.5">
-                  <div className="flex items-center space-x-2 text-rose-400 text-xs font-semibold font-mono">
-                    <ShieldAlert className="w-4 h-4" />
-                    <span>Potential Target Leakage Detected ({analysis.leakage_warnings.length} features)</span>
-                  </div>
-                  <ul className="text-xs text-rose-300/90 list-disc list-inside space-y-0.5 font-mono">
+                <Notice tone="bad" title={`Possible target leakage in ${analysis.leakage_warnings.length} ${analysis.leakage_warnings.length === 1 ? 'feature' : 'features'}`}>
+                  <ul className="mt-1 list-inside list-disc space-y-0.5">
                     {analysis.leakage_warnings.map((warn, i) => (
                       <li key={i}>{warn}</li>
                     ))}
                   </ul>
-                </div>
+                </Notice>
               )}
 
-              {/* Class Imbalance Breakdown for Classification */}
-              {analysis.class_imbalance && (
-                <div className="p-4 rounded-xl glass-card space-y-3">
-                  <div className="flex items-center justify-between">
-                    <h4 className="text-xs font-mono font-semibold uppercase tracking-wider text-zinc-300 flex items-center space-x-2">
-                      <BarChart3 className="w-3.5 h-3.5 text-blue-400" />
-                      <span>Class Imbalance & Entropy Evaluation</span>
-                    </h4>
-                    {analysis.class_imbalance.imbalance_severity !== 'NONE' && (
-                      <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-amber-500/10 text-amber-400 border border-amber-500/20 font-semibold">
-                        {analysis.class_imbalance.imbalance_severity} Imbalance
-                      </span>
-                    )}
+              {ci && (
+                <section className="rounded-xl border border-line p-5">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h3 className="text-base">Class balance</h3>
+                    {ci.imbalance_severity !== 'NONE' && <Badge tone="warn">{ci.imbalance_severity.toLowerCase()} imbalance</Badge>}
+                  </div>
+                  <div className="mt-4 grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-4">
+                    <Measure label="Smallest class" value={`${ci.minority_percentage}%`} />
+                    <Measure label="Gini impurity" value={ci.gini_impurity} />
+                    <Measure label="Shannon entropy" value={ci.entropy} />
+                    <Measure label="Suggested metric" value={ci.minority_percentage < 15 ? 'PR-AUC or F1' : 'ROC-AUC or accuracy'} />
                   </div>
 
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-mono">
-                    <div className="p-2.5 rounded-lg bg-zinc-950/60 border border-white/[0.05]">
-                      <span className="text-zinc-500 text-[10px]">Minority Share</span>
-                      <div className="text-sm font-bold text-zinc-200">
-                        {analysis.class_imbalance.minority_percentage}%
-                      </div>
-                    </div>
-                    <div className="p-2.5 rounded-lg bg-zinc-950/60 border border-white/[0.05]">
-                      <span className="text-zinc-500 text-[10px]">Gini Impurity</span>
-                      <div className="text-sm font-bold text-zinc-200">
-                        {analysis.class_imbalance.gini_impurity}
-                      </div>
-                    </div>
-                    <div className="p-2.5 rounded-lg bg-zinc-950/60 border border-white/[0.05]">
-                      <span className="text-zinc-500 text-[10px]">Shannon Entropy</span>
-                      <div className="text-sm font-bold text-zinc-200">
-                        {analysis.class_imbalance.entropy}
-                      </div>
-                    </div>
-                    <div className="p-2.5 rounded-lg bg-zinc-950/60 border border-white/[0.05]">
-                      <span className="text-zinc-500 text-[10px]">Evaluation Metric</span>
-                      <div className="text-sm font-bold text-emerald-400">
-                        {analysis.class_imbalance.minority_percentage < 15 ? 'PR-AUC / F1' : 'ROC-AUC / Acc'}
-                      </div>
-                    </div>
+                  <div className="mt-5 flex h-4 w-full overflow-hidden rounded-full bg-sunken" role="img" aria-label="Class distribution">
+                    {Object.entries(ci.distribution).map(([cat, info], idx) => (
+                      <div
+                        key={cat}
+                        style={{ width: `${info.percentage}%`, background: CLASS_COLORS[idx % CLASS_COLORS.length] }}
+                        title={`${cat}: ${info.count} (${info.percentage}%)`}
+                      />
+                    ))}
                   </div>
-
-                  {/* Class Distribution Bar */}
-                  <div className="space-y-1.5 pt-1">
-                    <div className="h-3 w-full rounded-full bg-zinc-900 overflow-hidden flex">
-                      {Object.entries(analysis.class_imbalance.distribution).map(([cat, info], idx) => {
-                        const colors = ['bg-emerald-500', 'bg-blue-500', 'bg-purple-500', 'bg-amber-500', 'bg-rose-500'];
-                        const color = colors[idx % colors.length];
-                        return (
-                          <div
-                            key={cat}
-                            style={{ width: `${info.percentage}%` }}
-                            className={`${color} h-full transition-all`}
-                            title={`${cat}: ${info.count} (${info.percentage}%)`}
-                          />
-                        );
-                      })}
-                    </div>
-                    <div className="flex flex-wrap items-center gap-3 text-[11px] font-mono text-zinc-400">
-                      {Object.entries(analysis.class_imbalance.distribution).map(([cat, info], idx) => {
-                        const dotColors = ['bg-emerald-400', 'bg-blue-400', 'bg-purple-400', 'bg-amber-400', 'bg-rose-400'];
-                        return (
-                          <div key={cat} className="flex items-center space-x-1.5">
-                            <span className={`w-2 h-2 rounded-full ${dotColors[idx % dotColors.length]}`} />
-                            <span className="text-zinc-300 font-semibold">{cat}:</span>
-                            <span>{info.count} ({info.percentage}%)</span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </div>
+                  <ul className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-sm">
+                    {Object.entries(ci.distribution).map(([cat, info], idx) => (
+                      <li key={cat} className="flex items-center gap-2">
+                        <span className="h-2.5 w-2.5 rounded-full" style={{ background: CLASS_COLORS[idx % CLASS_COLORS.length] }} aria-hidden />
+                        <span className="font-medium">{cat}</span>
+                        <span className="text-ink-3">
+                          {info.count.toLocaleString()} ({info.percentage}%)
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
               )}
 
-              {/* Feature Utility & Mutual Information Ranking */}
-              <div className="p-4 rounded-xl glass-card space-y-3">
-                <div className="flex items-center justify-between">
-                  <h4 className="text-xs font-mono font-semibold uppercase tracking-wider text-zinc-300 flex items-center space-x-2">
-                    <TrendingUp className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>Predictive Feature Ranking (Mutual Information & Correlation)</span>
-                  </h4>
-                  <span className="text-[11px] font-mono text-zinc-500">
-                    {analysis.feature_importances.length} Features Evaluated
+              <section className="overflow-hidden rounded-xl border border-line">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-5 py-3.5">
+                  <h3 className="text-base">Features ranked by usefulness</h3>
+                  <span className="text-sm text-ink-3">
+                    {analysis.feature_importances.length} features · mutual information and correlation
                   </span>
                 </div>
-
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs font-mono border-collapse">
+                <div className="max-h-[360px] overflow-auto">
+                  <table className="tbl">
                     <thead>
-                      <tr className="border-b border-white/[0.08] text-zinc-400 text-[10px] uppercase">
-                        <th className="py-2 px-2.5 w-10">Rank</th>
-                        <th className="py-2 px-2.5">Feature Name</th>
-                        <th className="py-2 px-2.5">Predictive Utility</th>
-                        <th className="py-2 px-2.5">Score</th>
-                        <th className="py-2 px-2.5">Correlation</th>
-                        <th className="py-2 px-2.5 text-right">Leakage Status</th>
+                      <tr>
+                        <th className="w-12 text-right">Rank</th>
+                        <th>Feature</th>
+                        <th className="min-w-[160px]">Relative usefulness</th>
+                        <th className="text-right">Score</th>
+                        <th className="text-right">Correlation</th>
+                        <th>Leakage</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-white/[0.04]">
+                    <tbody>
                       {analysis.feature_importances.map((f, idx) => {
                         const maxScore = analysis.feature_importances[0]?.score || 1;
                         const pct = Math.min(100, Math.round((f.score / (maxScore || 1)) * 100));
-
                         return (
-                          <tr key={f.feature} className="hover:bg-white/[0.02]">
-                            <td className="py-2 px-2.5 text-zinc-600 font-bold">#{idx + 1}</td>
-                            <td className="py-2 px-2.5 text-zinc-200 font-semibold">{f.feature}</td>
-                            <td className="py-2 px-2.5 w-48">
-                              <div className="h-2 w-full rounded-full bg-zinc-900 overflow-hidden">
-                                <div
-                                  style={{ width: `${pct}%` }}
-                                  className={`h-full ${
-                                    f.leakage_risk ? 'bg-rose-500' : 'bg-emerald-400'
-                                  }`}
-                                />
-                              </div>
+                          <tr key={f.feature}>
+                            <td className="text-right text-ink-3">{idx + 1}</td>
+                            <td className="font-mono font-medium">{f.feature}</td>
+                            <td>
+                              <MeterBar value={pct} tone={f.leakage_risk ? 'bad' : 'accent'} />
                             </td>
-                            <td className="py-2 px-2.5 text-zinc-300">{f.score.toFixed(4)}</td>
-                            <td className="py-2 px-2.5 text-zinc-400">
-                              {f.correlation !== null && f.correlation !== undefined
-                                ? (f.correlation > 0 ? `+${f.correlation.toFixed(3)}` : f.correlation.toFixed(3))
-                                : '—'}
+                            <td className="text-right font-mono">{f.score.toFixed(4)}</td>
+                            <td className="text-right font-mono text-ink-2">
+                              {f.correlation !== null && f.correlation !== undefined ? (f.correlation > 0 ? `+${f.correlation.toFixed(3)}` : f.correlation.toFixed(3)) : '—'}
                             </td>
-                            <td className="py-2 px-2.5 text-right">
+                            <td>
                               {f.leakage_risk ? (
-                                <span className="inline-flex items-center space-x-1 text-[10px] px-2 py-0.5 rounded bg-rose-500/20 text-rose-400 border border-rose-500/30">
-                                  <AlertTriangle className="w-2.5 h-2.5" />
-                                  <span>Leakage Risk</span>
-                                </span>
+                                <Badge tone="bad" icon={AlertTriangle}>
+                                  Risk
+                                </Badge>
                               ) : (
-                                <span className="text-[10px] text-emerald-400 font-mono">Safe</span>
+                                <span className="text-ink-3">None found</span>
                               )}
                             </td>
                           </tr>
@@ -293,7 +213,7 @@ export const SupervisedTargetModal: React.FC<SupervisedTargetModalProps> = ({
                     </tbody>
                   </table>
                 </div>
-              </div>
+              </section>
             </div>
           )}
         </div>

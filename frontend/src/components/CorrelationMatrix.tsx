@@ -1,6 +1,7 @@
 import React from 'react';
-import { GitFork, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { AlertTriangle, CheckCircle2 } from 'lucide-react';
 import type { CorrelationPair } from '../types';
+import { Badge } from './ui';
 
 interface CorrelationMatrixProps {
   pairs: CorrelationPair[];
@@ -8,134 +9,171 @@ interface CorrelationMatrixProps {
   missingPairs?: { feature_a: string; feature_b: string; correlation: number }[];
 }
 
+/** Diverging fill: blue for positive, orange for negative, strength shown by opacity. */
+function heatStyle(v: number): React.CSSProperties {
+  const strength = Math.min(1, Math.abs(v));
+  const channel = v >= 0 ? '--heat-pos' : '--heat-neg';
+  return {
+    backgroundColor: `rgb(var(${channel}) / ${(strength * 0.9).toFixed(2)})`,
+    color: strength > 0.6 ? 'rgb(var(--on-heat))' : 'rgb(var(--ink))',
+  };
+}
+
+// Up to this many columns the matrix gets large cells and sits beside the explanations
+const COMPACT_MAX = 8;
+
 export const CorrelationMatrix: React.FC<CorrelationMatrixProps> = ({ pairs, matrix, missingPairs = [] }) => {
   const columns = Object.keys(matrix);
+  const compact = columns.length <= COMPACT_MAX;
+  const longest = Math.max(...columns.map((c) => c.length), 1);
+  // Rotated headers only need as much height as the longest name (about 0.6rem per character)
+  const headerHeight = `${Math.min(9, Math.max(3.5, longest * 0.62 + 0.5))}rem`;
 
-  const getHeatmapColor = (val: number) => {
-    if (val === 1) return 'bg-zinc-800 text-white font-semibold';
-    if (val >= 0.85) return 'bg-rose-500/30 text-rose-200 font-semibold border border-rose-500/40';
-    if (val >= 0.7) return 'bg-amber-500/20 text-amber-200';
-    if (val >= 0.3) return 'bg-zinc-800/60 text-zinc-300';
-    if (val >= -0.3) return 'bg-black text-zinc-600';
-    if (val >= -0.7) return 'bg-sky-500/20 text-sky-200';
-    return 'bg-blue-600/30 text-blue-200';
-  };
-
-  return (
-    <div className="space-y-3">
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-        <div className="lg:col-span-2 p-4 rounded-xl glass-card space-y-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-2">
-              <GitFork className="w-4 h-4 text-zinc-400" />
-              <h3 className="text-xs font-mono uppercase tracking-wider font-semibold text-zinc-300">
-                Collinear pairs
-              </h3>
-            </div>
-            <span className="text-[10px] font-mono text-zinc-500">{pairs.length} with |r| ≥ 0.75</span>
-          </div>
-
-          {pairs.length > 0 ? (
-            <div className="space-y-1.5">
-              {pairs.map((p, idx) => (
-                <div
-                  key={idx}
-                  className={`p-3 rounded-lg border flex items-center justify-between text-xs font-mono ${
-                    p.severity === 'CRITICAL'
-                      ? 'bg-rose-500/10 border-rose-500/20 text-rose-300'
-                      : 'bg-amber-500/10 border-amber-500/20 text-amber-300'
-                  }`}
-                >
-                  <div className="flex items-center space-x-2 min-w-0">
-                    <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
-                    <div className="truncate">
-                      <span className="font-semibold text-white">{p.feature_a}</span>
-                      <span className="text-zinc-500 mx-1.5">⇄</span>
-                      <span className="font-semibold text-white">{p.feature_b}</span>
-                    </div>
-                  </div>
-                  <div className="text-right shrink-0 pl-3">
-                    <span className="font-bold tabular-nums">r = {p.correlation}</span>
-                    <span className="text-[10px] text-zinc-500 ml-2 uppercase">{p.severity}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="p-4 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-xs flex items-center space-x-2">
-              <CheckCircle2 className="w-4 h-4 flex-shrink-0 text-emerald-400" />
-              <span>No pairs above |r| 0.75.</span>
-            </div>
-          )}
-        </div>
-
-        <div className="p-4 rounded-xl glass-card space-y-2 text-xs text-zinc-400">
-          <span className="text-[10px] font-mono uppercase tracking-wider text-zinc-500 block">Note</span>
-          <p className="leading-relaxed">
-            Pairs with |r| ≥ 0.85 inflate coefficient variance in linear models. Drop one of the pair, combine them, or use regularization.
-            This screen uses Pearson correlation, not a full VIF table.
-          </p>
-          {missingPairs.length > 0 && (
-            <div className="pt-2 space-y-1.5">
-              <span className="text-[10px] font-mono uppercase tracking-wider text-amber-400/80 block">
-                Co-missing (MAR heuristic)
-              </span>
-              {missingPairs.map((p, i) => (
-                <div key={i} className="text-[11px] font-mono text-zinc-300">
-                  {p.feature_a} ⇄ {p.feature_b} <span className="text-zinc-500">({p.correlation})</span>
-                </div>
-              ))}
-            </div>
-          )}
+  const pairsPanel = (
+    <section className="panel overflow-hidden">
+      <div className="panel-head">
+        <div>
+          <h2 className="panel-title">Highly correlated pairs</h2>
+          <p className="panel-sub">Pairs with |r| of 0.75 or more: {pairs.length} found.</p>
         </div>
       </div>
+      {pairs.length > 0 ? (
+        <ul className="divide-y divide-line">
+          {pairs.map((p, idx) => (
+            <li key={idx} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-5 py-3">
+              <span className="flex min-w-0 items-center gap-2.5">
+                <AlertTriangle className={`h-4 w-4 shrink-0 ${p.severity === 'CRITICAL' ? 'text-bad' : 'text-warn'}`} aria-hidden />
+                <span className="font-mono font-medium">{p.feature_a}</span>
+                <span className="text-ink-3" aria-label="and">
+                  &amp;
+                </span>
+                <span className="font-mono font-medium">{p.feature_b}</span>
+              </span>
+              <span className="flex items-center gap-3">
+                <span className="font-mono tabular-nums">r = {p.correlation}</span>
+                <Badge tone={p.severity === 'CRITICAL' ? 'bad' : 'warn'}>{p.severity === 'CRITICAL' ? 'Critical' : 'High'}</Badge>
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="flex items-center gap-3 px-5 py-5">
+          <CheckCircle2 className="h-5 w-5 shrink-0 text-good" aria-hidden /> No pair of numeric columns reaches |r| 0.75.
+        </p>
+      )}
+    </section>
+  );
 
-      {columns.length >= 2 && (
-        <div className="p-4 rounded-xl glass-card space-y-3">
-          <div className="flex items-center justify-between">
-            <h3 className="text-xs font-mono uppercase tracking-wider font-semibold text-zinc-300">
-              Pearson matrix
-            </h3>
-            <span className="text-[10px] font-mono text-zinc-500">{columns.length} numeric columns</span>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-center border-collapse text-xs">
-              <thead>
-                <tr>
-                  <th className="p-2 text-left text-[10px] text-zinc-600 uppercase font-mono sticky left-0 bg-black"></th>
-                  {columns.map((col) => (
-                    <th key={col} className="p-2 text-[10px] font-mono text-zinc-400 max-w-[90px] truncate" title={col}>
-                      {col}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {columns.map((rCol) => (
-                  <tr key={rCol}>
-                    <td className="p-2 text-left font-mono font-medium text-zinc-300 whitespace-nowrap text-[11px] border-r border-white/[0.04] sticky left-0 bg-black">
-                      {rCol}
-                    </td>
-                    {columns.map((cCol) => {
-                      const val = matrix[rCol]?.[cCol] ?? 0;
-                      return (
-                        <td key={cCol} className="p-0.5">
-                          <div
-                            className={`py-1 px-1.5 rounded font-mono text-[10px] tabular-nums ${getHeatmapColor(val)}`}
-                            title={`${rCol} vs ${cCol}: ${val}`}
-                          >
-                            {val.toFixed(2)}
-                          </div>
-                        </td>
-                      );
-                    })}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+  const notePanel = (
+    <section className="panel p-5">
+      <h2 className="panel-title">How to read this</h2>
+      <p className="mt-2 text-ink-2">
+        When two features move together (|r| ≥ 0.85), linear models cannot tell their effects apart and coefficients become unstable. Drop one, combine them, or use regularisation.
+      </p>
+      <p className="mt-2 text-sm text-ink-3">This is Pearson correlation, not a full variance inflation factor table.</p>
+      {missingPairs.length > 0 && (
+        <div className="mt-5 border-t border-line pt-4">
+          <h3 className="text-base">Missing together</h3>
+          <p className="text-sm text-ink-3">These columns tend to be empty on the same rows, which suggests the gaps are not random.</p>
+          <ul className="mt-2 space-y-1 text-sm">
+            {missingPairs.map((p, i) => (
+              <li key={i}>
+                <span className="font-mono">{p.feature_a}</span> &amp; <span className="font-mono">{p.feature_b}</span>{' '}
+                <span className="text-ink-3">(r = {p.correlation})</span>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
+    </section>
+  );
+
+  const matrixPanel =
+    columns.length >= 2 ? (
+      <section className="panel min-w-0 overflow-hidden">
+        <div className="panel-head">
+          <div>
+            <h2 className="panel-title">Pearson correlation matrix</h2>
+            <p className="panel-sub">{columns.length} numeric columns.</p>
+          </div>
+          <div className="flex items-center gap-2 text-sm text-ink-2" aria-label="Colour scale">
+            <span>−1</span>
+            <span
+              className="h-3 w-32 rounded-sm ring-1 ring-line-strong"
+              style={{
+                background:
+                  'linear-gradient(to right, rgb(var(--heat-neg) / 0.9), rgb(var(--heat-neg) / 0) 50%, rgb(var(--heat-pos) / 0) 50%, rgb(var(--heat-pos) / 0.9))',
+              }}
+              aria-hidden
+            />
+            <span>+1</span>
+          </div>
+        </div>
+        <div className="max-h-[75vh] overflow-auto p-5">
+          <table className={`border-separate border-spacing-1 ${compact ? 'mx-auto' : ''}`}>
+            <thead>
+              <tr>
+                <th className="sticky left-0 top-0 z-20 bg-surface" />
+                {columns.map((col) => (
+                  <th key={col} className="sticky top-0 z-10 bg-surface align-bottom font-normal" title={col}>
+                    <div
+                      className="mx-auto w-6 overflow-hidden whitespace-nowrap font-mono text-xs text-ink-2"
+                      style={{ height: headerHeight, writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}
+                    >
+                      {col}
+                    </div>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {columns.map((rCol) => (
+                <tr key={rCol}>
+                  <th scope="row" className="sticky left-0 z-10 whitespace-nowrap bg-surface pr-3 text-right font-mono text-xs font-normal text-ink-2">
+                    {rCol}
+                  </th>
+                  {columns.map((cCol) => {
+                    const val = matrix[rCol]?.[cCol] ?? 0;
+                    return (
+                      <td
+                        key={cCol}
+                        className={`rounded-md text-center font-mono tabular-nums ${
+                          compact ? 'h-16 min-w-[4.5rem] text-sm' : 'h-9 min-w-[3.25rem] text-[0.8125rem]'
+                        }`}
+                        style={rCol === cCol ? { backgroundColor: 'rgb(var(--sunken))', color: 'rgb(var(--ink-3))' } : heatStyle(val)}
+                        title={`${rCol} and ${cCol}: ${val}`}
+                      >
+                        {val.toFixed(2)}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    ) : null;
+
+  if (compact && matrixPanel) {
+    return (
+      <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
+        {matrixPanel}
+        <div className="space-y-5">
+          {pairsPanel}
+          {notePanel}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-5">
+      <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
+        {pairsPanel}
+        {notePanel}
+      </div>
+      {matrixPanel}
     </div>
   );
 };

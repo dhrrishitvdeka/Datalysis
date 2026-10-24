@@ -1,19 +1,9 @@
 import React, { useState } from 'react';
-import {
-  SlidersHorizontal,
-  RotateCcw,
-  Play,
-  Search,
-} from 'lucide-react';
-import type {
-  ColumnRecommendation,
-  ColumnFact,
-  RecipeOverride,
-  ProcessRequest,
-  CleaningReport,
-} from '../types';
+import { Play, RotateCcw } from 'lucide-react';
+import type { ColumnRecommendation, ColumnFact, RecipeOverride, ProcessRequest, CleaningReport } from '../types';
 import { executePreprocessing } from '../services/api';
 import { TargetNote } from './TargetNote';
+import { Notice, SearchBox, fmtType } from './ui';
 
 interface RecipeCustomizerProps {
   recommendations: Record<string, ColumnRecommendation>;
@@ -25,6 +15,36 @@ interface RecipeCustomizerProps {
 }
 
 type FilterTab = 'ALL' | 'OVERRIDDEN' | 'DROPS' | 'IMPUTATIONS' | 'ENCODINGS' | 'SCALING';
+
+/** One dropdown cell. Renders a dash when the choice does not apply, so every row keeps the same height. */
+const Choice: React.FC<{
+  label: string;
+  show: boolean;
+  why: string;
+  value: string;
+  hint?: string;
+  options: [string, string][];
+  onChange: (v: string) => void;
+}> = ({ label, show, why, value, hint, options, onChange }) =>
+  show ? (
+    <select
+      aria-label={label}
+      title={value === 'auto' && hint ? `Auto: ${hint}` : undefined}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className="field w-full"
+    >
+      {options.map(([v, text]) => (
+        <option key={v} value={v}>
+          {text}
+        </option>
+      ))}
+    </select>
+  ) : (
+    <span className="text-ink-3" title={why}>
+      —
+    </span>
+  );
 
 export const RecipeCustomizer: React.FC<RecipeCustomizerProps> = ({
   recommendations,
@@ -43,44 +63,27 @@ export const RecipeCustomizer: React.FC<RecipeCustomizerProps> = ({
 
   const updateColumnOverride = (column: string, field: keyof RecipeOverride, value: any) => {
     const prev = customRecipe[column] || {};
-    const updated = { ...prev, [field]: value };
-
-    // If setting drop to true, keep drop
-    const nextRecipe = { ...customRecipe, [column]: updated };
-    onRecipeChange(nextRecipe);
+    onRecipeChange({ ...customRecipe, [column]: { ...prev, [field]: value } });
   };
 
   const resetColumnOverride = (column: string) => {
-    const nextRecipe = { ...customRecipe };
-    delete nextRecipe[column];
-    onRecipeChange(nextRecipe);
-  };
-
-  const resetAllOverrides = () => {
-    onRecipeChange({});
+    const next = { ...customRecipe };
+    delete next[column];
+    onRecipeChange(next);
   };
 
   const overriddenCount = Object.keys(customRecipe).length;
+  const effectiveDrop = (c: string) => (customRecipe[c]?.drop !== undefined ? customRecipe[c]?.drop : recommendations[c]?.should_drop);
 
   const filteredColumns = columns.filter((col) => {
     if (search && !col.toLowerCase().includes(search.toLowerCase())) return false;
     const rec = recommendations[col];
     const override = customRecipe[col];
-
     if (filter === 'OVERRIDDEN') return !!override && Object.keys(override).length > 0;
-    if (filter === 'DROPS') {
-      return (override?.drop !== undefined ? override.drop : rec.should_drop);
-    }
-    if (filter === 'IMPUTATIONS') {
-      return rec.missing_pct > 0 || !!override?.imputation;
-    }
-    if (filter === 'ENCODINGS') {
-      return !!rec.encoding || !!override?.encoding;
-    }
-    if (filter === 'SCALING') {
-      const fact = columnFacts[col];
-      return !!fact?.numeric_stats || !!override?.scaling || !!override?.outliers;
-    }
+    if (filter === 'DROPS') return !!effectiveDrop(col);
+    if (filter === 'IMPUTATIONS') return rec.missing_pct > 0 || !!override?.imputation;
+    if (filter === 'ENCODINGS') return !!rec.encoding || !!override?.encoding;
+    if (filter === 'SCALING') return !!columnFacts[col]?.numeric_stats || !!override?.scaling || !!override?.outliers;
     return true;
   });
 
@@ -94,9 +97,7 @@ export const RecipeCustomizer: React.FC<RecipeCustomizerProps> = ({
         ...(targetColumn && { target_column: targetColumn }),
       };
       const report = await executePreprocessing(payload);
-      if (onRunSuccess) {
-        onRunSuccess(report);
-      }
+      onRunSuccess?.(report);
     } catch (err: any) {
       setError(err.message || 'Custom recipe execution failed');
     } finally {
@@ -104,136 +105,82 @@ export const RecipeCustomizer: React.FC<RecipeCustomizerProps> = ({
     }
   };
 
+  const filters: { id: FilterTab; label: string; count: number }[] = [
+    { id: 'ALL', label: 'All', count: columns.length },
+    { id: 'OVERRIDDEN', label: 'Edited', count: overriddenCount },
+    { id: 'DROPS', label: 'Dropped', count: columns.filter((c) => effectiveDrop(c)).length },
+    { id: 'IMPUTATIONS', label: 'Missing values', count: columns.filter((c) => recommendations[c]?.missing_pct > 0).length },
+    { id: 'ENCODINGS', label: 'Encoding', count: columns.filter((c) => !!recommendations[c]?.encoding).length },
+    { id: 'SCALING', label: 'Scaling and outliers', count: columns.filter((c) => !!columnFacts[c]?.numeric_stats).length },
+  ];
+
   return (
-    <div className="space-y-4">
-      {/* Top Action & Summary Bar */}
-      <div className="p-4 rounded-xl glass-card flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
-        <div className="space-y-0.5">
-          <div className="flex items-center space-x-2">
-            <SlidersHorizontal className="w-4 h-4 text-emerald-400" />
-            <h3 className="text-sm font-semibold font-mono tracking-tight text-white dark:text-white">
-              Interactive Recipe Customizer
-            </h3>
-            {overriddenCount > 0 && (
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                {overriddenCount} column{overriddenCount > 1 ? 's' : ''} customized
-              </span>
-            )}
-          </div>
-          <p className="text-xs text-zinc-400">
-            Override automated expert rules per column. Modify drop decisions, imputation heuristics, outlier mitigation, and feature encodings.
+    <div className="space-y-5">
+      <section className="panel flex flex-wrap items-center justify-between gap-4 p-5">
+        <div className="max-w-2xl">
+          <h2 className="panel-title">
+            {overriddenCount === 0 ? 'Using the rules’ recommendations' : `${overriddenCount} ${overriddenCount === 1 ? 'column' : 'columns'} edited`}
+          </h2>
+          <p className="panel-sub">
+            Every column starts on “Auto”, which follows the recommended rule. Change a choice only where you know better, then run the recipe.
           </p>
         </div>
-
-        <div className="flex items-center space-x-2 w-full md:w-auto">
+        <div className="flex items-center gap-2">
           {overriddenCount > 0 && (
-            <button
-              onClick={resetAllOverrides}
-              className="px-3 py-1.5 rounded-lg bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border border-white/[0.08] text-xs font-mono flex items-center space-x-1.5 transition"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-              <span>Reset All to Defaults</span>
+            <button type="button" className="btn" onClick={() => onRecipeChange({})}>
+              <RotateCcw className="h-4 w-4" aria-hidden /> Reset all
             </button>
           )}
-
-          <button
-            onClick={handleExecute}
-            disabled={executing}
-            className="flex-1 md:flex-none px-4 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 disabled:opacity-40 text-black font-semibold text-xs flex items-center justify-center space-x-1.5 transition shadow-sm"
-          >
+          <button type="button" className="btn btn-primary" onClick={handleExecute} disabled={executing}>
             {executing ? (
               <>
-                <span className="w-3 h-3 border-2 border-black/40 border-t-black rounded-full animate-spin" />
-                <span>Executing Pipeline...</span>
+                <span className="h-4 w-4 animate-spin rounded-full border-2 border-accent-ink/40 border-t-accent-ink" /> Running…
               </>
             ) : (
               <>
-                <Play className="w-3.5 h-3.5 fill-current" />
-                <span>Apply & Run Custom Recipe</span>
+                <Play className="h-4 w-4" aria-hidden /> Run recipe
               </>
             )}
           </button>
         </div>
-      </div>
+      </section>
 
       <TargetNote target={targetColumn} />
+      {error && <Notice tone="bad" title="The recipe did not run">{error}</Notice>}
 
-      {error && (
-        <div className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs font-mono">
-          {error}
-        </div>
-      )}
-
-      {/* Filter and Search Bar */}
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-2.5">
-        <div className="flex items-center space-x-1 overflow-x-auto w-full sm:w-auto pb-1 sm:pb-0">
-          {[
-            { id: 'ALL', label: 'All Columns', count: columns.length },
-            { id: 'OVERRIDDEN', label: 'Customized', count: overriddenCount },
-            {
-              id: 'DROPS',
-              label: 'Drops',
-              count: columns.filter((c) => customRecipe[c]?.drop !== undefined ? customRecipe[c]?.drop : recommendations[c]?.should_drop).length,
-            },
-            {
-              id: 'IMPUTATIONS',
-              label: 'Imputations',
-              count: columns.filter((c) => recommendations[c]?.missing_pct > 0).length,
-            },
-            {
-              id: 'ENCODINGS',
-              label: 'Encodings',
-              count: columns.filter((c) => !!recommendations[c]?.encoding).length,
-            },
-            {
-              id: 'SCALING',
-              label: 'Scaling & Outliers',
-              count: columns.filter((c) => !!columnFacts[c]?.numeric_stats).length,
-            },
-          ].map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setFilter(tab.id as FilterTab)}
-              className={`px-2.5 py-1 rounded-md text-xs font-mono transition shrink-0 flex items-center space-x-1.5 ${
-                filter === tab.id
-                  ? 'bg-zinc-100 text-zinc-950 font-semibold'
-                  : 'text-zinc-400 hover:text-white hover:bg-white/[0.04]'
-              }`}
-            >
-              <span>{tab.label}</span>
-              <span className="text-[10px] opacity-60">({tab.count})</span>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="seg" role="group" aria-label="Filter columns">
+          {filters.map((t) => (
+            <button key={t.id} type="button" aria-pressed={filter === t.id} onClick={() => setFilter(t.id)}>
+              {t.label} <span className="tabular-nums text-ink-3">{t.count}</span>
             </button>
           ))}
         </div>
-
-        <div className="relative w-full sm:w-64 shrink-0">
-          <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-500" />
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search column..."
-            className="w-full pl-8 pr-3 py-1 text-xs rounded-md bg-zinc-950/60 border border-white/[0.08] text-zinc-200 placeholder-zinc-500 focus:outline-none focus:border-white/25 transition"
-          />
-        </div>
+        <SearchBox value={search} onChange={setSearch} placeholder="Find a column" className="w-full sm:w-64" />
       </div>
 
-      {/* Columns Table / Customizer Grid */}
-      <div className="rounded-xl border border-white/[0.08] bg-zinc-950/70 overflow-hidden">
+      <div className="panel overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs border-collapse">
+          <table className="tbl min-w-[1000px] table-fixed">
+            <colgroup>
+              <col className="w-[22%]" />
+              <col className="w-[13%]" />
+              <col className="w-[16%]" />
+              <col className="w-[16%]" />
+              <col className="w-[16%]" />
+              <col className="w-[17%]" />
+            </colgroup>
             <thead>
-              <tr className="border-b border-white/[0.08] bg-zinc-900/60 text-zinc-400 font-mono text-[11px] uppercase tracking-wider">
-                <th className="py-2.5 px-3">Column & Type</th>
-                <th className="py-2.5 px-3">Drop Decision</th>
-                <th className="py-2.5 px-3">Imputation Strategy</th>
-                <th className="py-2.5 px-3">Outlier Handling</th>
-                <th className="py-2.5 px-3">Scaling</th>
-                <th className="py-2.5 px-3">Encoding</th>
-                <th className="py-2.5 px-3 text-right">Reset</th>
+              <tr>
+                <th>Column</th>
+                <th>Keep or drop</th>
+                <th>Missing values</th>
+                <th>Outliers</th>
+                <th>Scaling</th>
+                <th>Encoding</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-white/[0.04]">
+            <tbody>
               {filteredColumns.map((col) => {
                 const rec = recommendations[col];
                 const fact = columnFacts[col];
@@ -241,169 +188,148 @@ export const RecipeCustomizer: React.FC<RecipeCustomizerProps> = ({
                 const isOverridden = Object.keys(override).length > 0;
 
                 const isNumeric = !!fact?.numeric_stats;
-                const isCat = fact?.inferred_type?.includes('categorical') || fact?.is_binary;
+                const isCat = !!(fact?.inferred_type?.includes('categorical') || fact?.is_binary || fact?.inferred_type === 'free_text');
                 const hasMissing = (rec?.missing_pct ?? 0) > 0;
+                const drop = !!effectiveDrop(col);
 
-                // Effective drop
-                const currentDrop = override.drop !== undefined ? override.drop : rec?.should_drop;
-                const recImputationAction = rec?.imputation?.action;
-                const currentImputation = override.imputation || (recImputationAction ? 'auto' : (hasMissing ? 'auto' : 'none'));
-
-                const currentOutliers = override.outliers || (isNumeric ? 'auto' : 'none');
-                const currentScaling = override.scaling || (isNumeric ? 'auto' : 'none');
-                const currentEncoding = override.encoding || (isCat ? 'auto' : 'none');
+                const autoNumeric = rec?.scaling_and_outliers?.map((s) => s.technique).join(', ');
+                const subline =
+                  drop && rec?.drop_reason
+                    ? rec.drop_reason
+                    : `${fmtType(fact?.inferred_type || rec?.inferred_type)} · ${(fact?.unique_count ?? rec?.unique_count)?.toLocaleString()} unique${
+                        hasMissing ? ` · ${rec.missing_pct}% missing` : ''
+                      }`;
 
                 return (
-                  <tr
-                    key={col}
-                    className={`hover:bg-white/[0.02] transition ${
-                      currentDrop ? 'opacity-60 bg-rose-500/[0.02]' : ''
-                    } ${isOverridden ? 'border-l-2 border-l-emerald-400' : ''}`}
-                  >
-                    {/* Column Name & Info */}
-                    <td className="py-3 px-3">
-                      <div className="space-y-0.5">
-                        <div className="flex items-center space-x-1.5 font-mono">
-                          <span className="font-semibold text-zinc-100">{col}</span>
-                          {isOverridden && (
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" title="Customized" />
-                          )}
-                        </div>
-                        <div className="flex items-center space-x-2 text-[11px] text-zinc-500 font-mono">
-                          <span>{fact?.inferred_type || rec?.inferred_type}</span>
-                          {rec?.missing_pct > 0 && (
-                            <span className="text-amber-400">{rec.missing_pct}% null</span>
-                          )}
-                          <span>{fact?.unique_count ?? rec?.unique_count} uniq</span>
-                        </div>
-                      </div>
-                    </td>
-
-                    {/* Drop Decision */}
-                    <td className="py-3 px-3">
-                      <div className="flex items-center space-x-2">
-                        <label className="relative inline-flex items-center cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={currentDrop}
-                            onChange={(e) => updateColumnOverride(col, 'drop', e.target.checked)}
-                            className="sr-only peer"
-                          />
-                          <div className="w-9 h-5 bg-zinc-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-zinc-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-rose-600"></div>
-                        </label>
-                        <span className={`text-[11px] font-mono ${currentDrop ? 'text-rose-400 font-semibold' : 'text-zinc-400'}`}>
-                          {currentDrop ? 'Drop' : 'Keep'}
+                  <tr key={col} className="h-[4.25rem]">
+                    <td style={isOverridden ? { boxShadow: 'inset 3px 0 0 rgb(var(--accent))' } : undefined}>
+                      <div className="flex items-center gap-2">
+                        <span className="truncate font-mono font-medium" title={col}>
+                          {col}
                         </span>
+                        {isOverridden && (
+                          <button
+                            type="button"
+                            onClick={() => resetColumnOverride(col)}
+                            className="inline-flex shrink-0 items-center gap-1 rounded-md bg-accent-soft px-1.5 py-0.5 text-xs font-medium text-accent hover:underline"
+                            title="Edited. Click to go back to the recommendation."
+                          >
+                            <RotateCcw className="h-3 w-3" aria-hidden /> Reset
+                          </button>
+                        )}
                       </div>
-                      {rec?.drop_reason && (
-                        <p className="text-[10px] text-zinc-500 mt-0.5 line-clamp-1 max-w-[180px]" title={rec.drop_reason}>
-                          Rule: {rec.drop_reason}
-                        </p>
-                      )}
+                      <p className={`truncate text-xs ${drop && rec?.drop_reason ? 'text-bad' : 'text-ink-3'}`} title={subline}>
+                        {subline}
+                      </p>
                     </td>
 
-                    {/* Imputation Strategy */}
-                    <td className="py-3 px-3">
-                      {!currentDrop && hasMissing ? (
-                        <select
-                          value={currentImputation}
-                          onChange={(e) => updateColumnOverride(col, 'imputation', e.target.value)}
-                          className="bg-zinc-900 border border-white/[0.1] rounded px-2 py-1 text-xs text-zinc-200 focus:outline-none focus:border-white/30"
-                        >
-                          <option value="auto">Auto ({rec?.imputation?.technique || 'Rule'})</option>
-                          <option value="median">Median</option>
-                          <option value="mean">Mean</option>
-                          <option value="mode">Mode (Most Frequent)</option>
-                          <option value="constant">Constant ('Missing' / 0)</option>
-                          {isNumeric && <option value="knn">KNN Imputer</option>}
-                          <option value="drop_rows">Drop Null Rows</option>
-                          <option value="none">No Imputation</option>
-                        </select>
-                      ) : (
-                        <span className="text-[11px] text-zinc-600 font-mono">
-                          {currentDrop ? '—' : 'No missing values'}
-                        </span>
-                      )}
-                    </td>
-
-                    {/* Outlier Handling */}
-                    <td className="py-3 px-3">
-                      {!currentDrop && isNumeric ? (
-                        <select
-                          value={currentOutliers}
-                          onChange={(e) => updateColumnOverride(col, 'outliers', e.target.value)}
-                          className="bg-zinc-900 border border-white/[0.1] rounded px-2 py-1 text-xs text-zinc-200 focus:outline-none focus:border-white/30"
-                        >
-                          <option value="auto">Auto (Rule Recommended)</option>
-                          <option value="winsorize">Winsorize (1% - 99%)</option>
-                          <option value="clip_iqr">Clip IQR (1.5x Fences)</option>
-                          <option value="zscore">Z-Score (±3 StdDev)</option>
-                          <option value="none">None (Keep Outliers)</option>
-                        </select>
-                      ) : (
-                        <span className="text-[11px] text-zinc-600 font-mono">—</span>
-                      )}
-                    </td>
-
-                    {/* Scaling */}
-                    <td className="py-3 px-3">
-                      {!currentDrop && isNumeric ? (
-                        <select
-                          value={currentScaling}
-                          onChange={(e) => updateColumnOverride(col, 'scaling', e.target.value)}
-                          className="bg-zinc-900 border border-white/[0.1] rounded px-2 py-1 text-xs text-zinc-200 focus:outline-none focus:border-white/30"
-                        >
-                          <option value="auto">Auto (Rule Recommended)</option>
-                          <option value="standard">StandardScaler (Z-Score)</option>
-                          <option value="robust">RobustScaler (Median/IQR)</option>
-                          <option value="log1p">Log1p (Skew Mitigation)</option>
-                          <option value="none">None (Raw Scale)</option>
-                        </select>
-                      ) : (
-                        <span className="text-[11px] text-zinc-600 font-mono">—</span>
-                      )}
-                    </td>
-
-                    {/* Encoding */}
-                    <td className="py-3 px-3">
-                      {!currentDrop && (isCat || fact?.inferred_type === 'free_text') ? (
-                        <select
-                          value={currentEncoding}
-                          onChange={(e) => updateColumnOverride(col, 'encoding', e.target.value)}
-                          className="bg-zinc-900 border border-white/[0.1] rounded px-2 py-1 text-xs text-zinc-200 focus:outline-none focus:border-white/30"
-                        >
-                          <option value="auto">Auto ({rec?.encoding?.technique || 'Rule'})</option>
-                          <option value="onehot">One-Hot Encoding</option>
-                          <option value="frequency">Frequency Encoding</option>
-                          <option value="binary">Binary Integer (0/1)</option>
-                          <option value="ordinal">Ordinal Sequence</option>
-                          <option value="none">None (Keep Raw)</option>
-                        </select>
-                      ) : (
-                        <span className="text-[11px] text-zinc-600 font-mono">—</span>
-                      )}
-                    </td>
-
-                    {/* Reset Button */}
-                    <td className="py-3 px-3 text-right">
-                      {isOverridden ? (
-                        <button
-                          onClick={() => resetColumnOverride(col)}
-                          className="p-1 rounded text-zinc-400 hover:text-white hover:bg-zinc-800 transition"
-                          title="Reset to rule recommendation"
-                        >
-                          <RotateCcw className="w-3.5 h-3.5" />
+                    <td>
+                      <div className="seg !p-0.5" role="group" aria-label={`Keep or drop ${col}`}>
+                        <button type="button" className="!h-7 !px-2.5" aria-pressed={!drop} onClick={() => updateColumnOverride(col, 'drop', false)}>
+                          Keep
                         </button>
-                      ) : (
-                        <span className="text-[10px] font-mono text-zinc-600">Default</span>
-                      )}
+                        <button
+                          type="button"
+                          className={`!h-7 !px-2.5 ${drop ? '!bg-bad-soft !text-bad' : ''}`}
+                          aria-pressed={drop}
+                          onClick={() => updateColumnOverride(col, 'drop', true)}
+                        >
+                          Drop
+                        </button>
+                      </div>
+                    </td>
+
+                    <td>
+                      <Choice
+                        label={`Missing values for ${col}`}
+                        show={!drop && hasMissing}
+                        why={drop ? 'Column is dropped' : 'No missing values'}
+                        value={override.imputation || 'auto'}
+                        hint={rec?.imputation?.technique}
+                        onChange={(v) => updateColumnOverride(col, 'imputation', v)}
+                        options={[
+                          ['auto', 'Auto'],
+                          ['median', 'Median'],
+                          ['mean', 'Mean'],
+                          ['mode', 'Most frequent'],
+                          ['constant', 'Constant'],
+                          ...(isNumeric ? [['knn', 'KNN imputer'] as [string, string]] : []),
+                          ['drop_rows', 'Drop rows'],
+                          ['none', 'Leave as is'],
+                        ]}
+                      />
+                    </td>
+
+                    <td>
+                      <Choice
+                        label={`Outlier handling for ${col}`}
+                        show={!drop && isNumeric}
+                        why={drop ? 'Column is dropped' : 'Numeric columns only'}
+                        value={override.outliers || 'auto'}
+                        hint={autoNumeric}
+                        onChange={(v) => updateColumnOverride(col, 'outliers', v)}
+                        options={[
+                          ['auto', 'Auto'],
+                          ['winsorize', 'Winsorize 1–99%'],
+                          ['clip_iqr', 'Clip to 1.5 × IQR'],
+                          ['zscore', 'Z-score ±3 SD'],
+                          ['none', 'Keep outliers'],
+                        ]}
+                      />
+                    </td>
+
+                    <td>
+                      <Choice
+                        label={`Scaling for ${col}`}
+                        show={!drop && isNumeric}
+                        why={drop ? 'Column is dropped' : 'Numeric columns only'}
+                        value={override.scaling || 'auto'}
+                        hint={autoNumeric}
+                        onChange={(v) => updateColumnOverride(col, 'scaling', v)}
+                        options={[
+                          ['auto', 'Auto'],
+                          ['standard', 'Standard'],
+                          ['robust', 'Robust'],
+                          ['log1p', 'Log1p'],
+                          ['none', 'Raw scale'],
+                        ]}
+                      />
+                    </td>
+
+                    <td>
+                      <Choice
+                        label={`Encoding for ${col}`}
+                        show={!drop && isCat}
+                        why={drop ? 'Column is dropped' : 'Categorical columns only'}
+                        value={override.encoding || 'auto'}
+                        hint={rec?.encoding?.technique}
+                        onChange={(v) => updateColumnOverride(col, 'encoding', v)}
+                        options={[
+                          ['auto', 'Auto'],
+                          ['onehot', 'One-hot'],
+                          ['frequency', 'Frequency'],
+                          ['binary', 'Binary 0 or 1'],
+                          ['ordinal', 'Ordinal'],
+                          ['none', 'Keep raw'],
+                        ]}
+                      />
                     </td>
                   </tr>
                 );
               })}
+              {filteredColumns.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="py-10 text-center text-ink-3">
+                    No columns match this filter.
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
+        <p className="border-t border-line px-5 py-3 text-sm text-ink-3">
+          Hover a dropdown that says Auto to see which technique the rules picked. A dash means the choice does not apply to that column.
+        </p>
       </div>
     </div>
   );

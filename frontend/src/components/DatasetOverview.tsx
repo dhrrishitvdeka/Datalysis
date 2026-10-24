@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
-import { Table, ArrowUpDown, Search } from 'lucide-react';
+import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react';
 import type { DatasetSummary, DatasetMetadata, ColumnFact, ColumnRecommendation } from '../types';
+import { Badge, Measure, SearchBox, StatusBadge, STATUS_RANK, fmtType } from './ui';
 
 interface DatasetOverviewProps {
   summary: DatasetSummary;
@@ -31,8 +32,8 @@ export const DatasetOverview: React.FC<DatasetOverviewProps> = ({
   const columns = preview.length > 0 ? Object.keys(preview[0]) : Object.keys(columnFacts);
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState<string | null>(null);
-  const [sortKey, setSortKey] = useState<SortKey>('missing');
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+  const [sortKey, setSortKey] = useState<SortKey>('status');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
 
   const rows = useMemo(() => {
     let list = Object.values(columnFacts);
@@ -42,9 +43,7 @@ export const DatasetOverview: React.FC<DatasetOverviewProps> = ({
       list = list.filter((f) => f.name.toLowerCase().includes(q));
     }
     const dir = sortDir === 'asc' ? 1 : -1;
-    list = [...list].sort((a, b) => {
-      const recA = recommendations[a.name];
-      const recB = recommendations[b.name];
+    return [...list].sort((a, b) => {
       switch (sortKey) {
         case 'name':
           return dir * a.name.localeCompare(b.name);
@@ -53,239 +52,214 @@ export const DatasetOverview: React.FC<DatasetOverviewProps> = ({
         case 'unique':
           return dir * (a.unique_count - b.unique_count);
         case 'status':
-          return dir * (recA?.status ?? '').localeCompare(recB?.status ?? '');
+          return (
+            dir * ((STATUS_RANK[recommendations[a.name]?.status] ?? 9) - (STATUS_RANK[recommendations[b.name]?.status] ?? 9))
+          );
         case 'missing':
         default:
           return dir * (a.missing_pct - b.missing_pct);
       }
     });
-    return list;
   }, [columnFacts, recommendations, search, typeFilter, sortKey, sortDir]);
 
   const toggleSort = (key: SortKey) => {
     if (sortKey === key) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
     else {
       setSortKey(key);
-      setSortDir(key === 'name' || key === 'type' ? 'asc' : 'desc');
+      setSortDir(key === 'name' || key === 'type' || key === 'status' ? 'asc' : 'desc');
     }
   };
 
-  const statusLabel = (status?: string) => {
-    switch (status) {
-      case 'DROP_RECOMMENDED':
-        return { text: 'Drop', cls: 'text-rose-400 bg-rose-500/10 border-rose-500/20' };
-      case 'CRITICAL_ATTENTION':
-        return { text: 'Critical', cls: 'text-rose-400 bg-rose-500/10 border-rose-500/20' };
-      case 'REQUIRES_TRANSFORMATION':
-        return { text: 'Transform', cls: 'text-amber-400 bg-amber-500/10 border-amber-500/20' };
-      case 'READY_WITH_PREPROCESSING':
-        return { text: 'Encode', cls: 'text-sky-400 bg-sky-500/10 border-sky-500/20' };
-      default:
-        return { text: 'OK', cls: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' };
-    }
+  const SortHead = ({ k, children }: { k: SortKey; children: React.ReactNode }) => {
+    const Icon = sortKey === k ? (sortDir === 'asc' ? ArrowUp : ArrowDown) : ArrowUpDown;
+    return (
+      <th aria-sort={sortKey === k ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}>
+        <button type="button" onClick={() => toggleSort(k)} className="inline-flex items-center gap-1.5 hover:text-ink">
+          {children}
+          <Icon className={`h-3.5 w-3.5 ${sortKey === k ? 'text-accent' : 'text-ink-3'}`} aria-hidden />
+        </button>
+      </th>
+    );
   };
 
-  const SortBtn = ({ k, children }: { k: SortKey; children: React.ReactNode }) => (
-    <button
-      onClick={() => toggleSort(k)}
-      className={`inline-flex items-center gap-1 uppercase tracking-wider ${
-        sortKey === k ? 'text-zinc-200' : 'text-zinc-500'
-      }`}
-    >
-      {children}
-      <ArrowUpDown className="w-2.5 h-2.5" />
-    </button>
-  );
+  const DELIMITER_NAMES: Record<string, string> = { ',': 'comma-separated', '\t': 'tab-separated', ';': 'semicolon-separated', '|': 'pipe-separated' };
+  const delimiter = DELIMITER_NAMES[metadata.detected_delimiter ?? ''] ?? metadata.detected_encoding;
 
   return (
-    <div className="space-y-3">
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
-        {([
-          { label: 'Rows', value: summary.row_count.toLocaleString(), sub: 'records', warn: false },
-          { label: 'Columns', value: String(summary.col_count), sub: 'features', warn: false },
-          { label: 'Missing', value: `${summary.overall_missing_pct}%`, sub: `${summary.total_missing_cells.toLocaleString()} cells`, warn: summary.overall_missing_pct > 0 },
-          {
-            label: 'Duplicates',
-            value: String(summary.duplicate_rows),
-            // hidden duplicates differ only by an ID column (rule R-INT-01)
-            sub: hiddenDuplicates > 0 ? `${summary.duplicate_pct}% · +${hiddenDuplicates} hidden by ID` : `${summary.duplicate_pct}% overlap`,
-            warn: summary.duplicate_rows > 0 || hiddenDuplicates > 0,
-          },
-          { label: 'Memory', value: `${summary.memory_mb} MB`, sub: 'in-process', warn: false },
-          {
-            label: 'Format',
-            value: metadata.format.toUpperCase(),
-            sub: String(metadata.detected_delimiter === '\t' ? 'tab' : metadata.detected_delimiter || metadata.detected_encoding),
-            warn: false,
-          },
-        ] as { label: string; value: string; sub: string; warn: boolean }[]).map((m) => (
-          <div key={m.label} className="p-3 rounded-xl glass-card space-y-0.5">
-            <span className="text-[10px] text-zinc-500 font-mono uppercase tracking-wider">{m.label}</span>
-            <p className={`text-lg font-bold font-mono tabular-nums ${m.warn ? 'text-amber-400' : 'text-white'}`}>{m.value}</p>
-            <span className="text-[10px] text-zinc-600 font-mono">{m.sub}</span>
-          </div>
-        ))}
-      </div>
+    <div className="space-y-6">
+      <section aria-label="Dataset facts" className="panel grid grid-cols-2 gap-x-6 gap-y-5 p-5 sm:grid-cols-3 xl:grid-cols-6">
+        <Measure label="Rows" value={summary.row_count.toLocaleString()} />
+        <Measure label="Columns" value={summary.col_count} />
+        <Measure
+          label="Missing cells"
+          value={`${summary.overall_missing_pct}%`}
+          hint={`${summary.total_missing_cells.toLocaleString()} of ${summary.total_cells.toLocaleString()}`}
+          tone={summary.overall_missing_pct > 0 ? 'warn' : 'default'}
+        />
+        <Measure
+          label="Duplicate rows"
+          value={summary.duplicate_rows.toLocaleString()}
+          hint={hiddenDuplicates > 0 ? `+${hiddenDuplicates} that differ only by ID` : `${summary.duplicate_pct}% of rows`}
+          tone={summary.duplicate_rows > 0 || hiddenDuplicates > 0 ? 'warn' : 'default'}
+        />
+        <Measure label="Memory" value={`${summary.memory_mb} MB`} />
+        <Measure label="Format" value={metadata.format.toUpperCase()} hint={String(delimiter)} />
+      </section>
 
-      <div className="p-2.5 rounded-xl glass-card flex flex-wrap items-center gap-1.5 text-xs font-mono">
-        <span className="text-zinc-500 uppercase text-[10px] mr-1">Types</span>
-        <button
-          onClick={() => setTypeFilter(null)}
-          className={`px-2 py-0.5 rounded border text-[11px] ${
-            typeFilter === null ? 'bg-zinc-100 text-zinc-950 border-transparent' : 'bg-zinc-900 border-white/[0.06] text-zinc-400'
-          }`}
-        >
-          all {summary.col_count}
-        </button>
-        {Object.entries(summary.type_counts)
-          .filter(([, cnt]) => cnt > 0)
-          .map(([type, cnt]) => (
-            <button
-              key={type}
-              onClick={() => setTypeFilter(typeFilter === type ? null : type)}
-              className={`px-2 py-0.5 rounded border text-[11px] ${
-                typeFilter === type
-                  ? 'bg-zinc-100 text-zinc-950 border-transparent'
-                  : 'bg-zinc-900 border-white/[0.06] text-zinc-300'
-              }`}
-            >
-              <span className="font-semibold">{cnt}</span>{' '}
-              <span className="text-zinc-500">{type.replace(/_/g, ' ')}</span>
-            </button>
-          ))}
-      </div>
-
-      <div className="rounded-xl glass-card overflow-hidden">
-        <div className="p-3 bg-black border-b border-white/[0.06] flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+      <section className="panel overflow-hidden" aria-labelledby="dict-title">
+        <div className="panel-head">
           <div>
-            <h3 className="text-xs font-semibold text-zinc-200 font-mono">Column dictionary</h3>
-            <p className="text-[10px] text-zinc-500 font-mono">{rows.length} features · click a row to profile</p>
+            <h2 id="dict-title" className="panel-title">
+              Column dictionary
+            </h2>
+            <p className="panel-sub">
+              {rows.length} of {summary.col_count} columns. Select a row to profile it.
+            </p>
           </div>
-          <div className="relative w-full sm:w-64">
-            <Search className="w-3.5 h-3.5 text-zinc-500 absolute left-2.5 top-1/2 -translate-y-1/2" />
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Find column…"
-              className="w-full bg-zinc-950 border border-white/[0.08] rounded-md pl-8 pr-2 py-1.5 text-xs font-mono text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-zinc-500"
-            />
+          <SearchBox value={search} onChange={setSearch} placeholder="Find a column" className="w-full sm:w-64" />
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 border-b border-line px-5 py-3">
+          <span className="mr-1 text-sm text-ink-3">Filter by type</span>
+          <div className="seg" role="group" aria-label="Filter by column type">
+            <button type="button" aria-pressed={typeFilter === null} onClick={() => setTypeFilter(null)}>
+              All {summary.col_count}
+            </button>
+            {Object.entries(summary.type_counts)
+              .filter(([, cnt]) => cnt > 0)
+              .map(([type, cnt]) => (
+                <button
+                  key={type}
+                  type="button"
+                  aria-pressed={typeFilter === type}
+                  onClick={() => setTypeFilter(typeFilter === type ? null : type)}
+                >
+                  {fmtType(type)} <span className="tabular-nums text-ink-3">{cnt}</span>
+                </button>
+              ))}
           </div>
         </div>
-        <div className="overflow-x-auto max-h-[380px]">
-          <table className="w-full text-left text-xs border-collapse font-mono">
+
+        <div className="max-h-[560px] overflow-auto">
+          <table className="tbl">
             <thead>
-              <tr className="bg-zinc-950 border-b border-white/[0.06] text-[10px]">
-                <th className="py-2 px-3 sticky top-0 bg-zinc-950"><SortBtn k="name">Feature</SortBtn></th>
-                <th className="py-2 px-3 sticky top-0 bg-zinc-950"><SortBtn k="type">Type</SortBtn></th>
-                <th className="py-2 px-3 sticky top-0 bg-zinc-950"><SortBtn k="missing">Missing</SortBtn></th>
-                <th className="py-2 px-3 sticky top-0 bg-zinc-950"><SortBtn k="unique">Unique</SortBtn></th>
-                <th className="py-2 px-3 sticky top-0 bg-zinc-950">Center / mode</th>
-                <th className="py-2 px-3 sticky top-0 bg-zinc-950">Range / top</th>
-                <th className="py-2 px-3 sticky top-0 bg-zinc-950"><SortBtn k="status">Recipe</SortBtn></th>
+              <tr>
+                <SortHead k="name">Column</SortHead>
+                <SortHead k="type">Type</SortHead>
+                <SortHead k="missing">Missing</SortHead>
+                <SortHead k="unique">Unique values</SortHead>
+                <th>Typical value</th>
+                <th>Range or most common</th>
+                <SortHead k="status">Recommendation</SortHead>
               </tr>
             </thead>
-            <tbody className="divide-y divide-white/[0.03] text-zinc-300 text-[11px]">
+            <tbody>
               {rows.map((fact) => {
                 const rec = recommendations[fact.name];
-                const badge = statusLabel(rec?.status);
                 const center = fact.numeric_stats
-                  ? `μ ${fact.numeric_stats.mean}  med ${fact.numeric_stats.median}`
+                  ? `mean ${fact.numeric_stats.mean}, median ${fact.numeric_stats.median}`
                   : fact.categorical_stats?.mode_category ?? '—';
+                const top = fact.categorical_stats?.top_categories?.[0];
                 const range = fact.numeric_stats
-                  ? `${fact.numeric_stats.min} → ${fact.numeric_stats.max}`
-                  : fact.categorical_stats?.top_categories?.[0]
-                    ? `${fact.categorical_stats.top_categories[0].percentage}% ${fact.categorical_stats.top_categories[0].category}`
+                  ? `${fact.numeric_stats.min} to ${fact.numeric_stats.max}`
+                  : top
+                    ? `${top.category} (${top.percentage}%)`
                     : '—';
                 return (
-                  <tr
-                    key={fact.name}
-                    className={`hover:bg-zinc-900/50 cursor-pointer ${rec?.should_drop ? 'bg-rose-950/10' : ''}`}
-                    onClick={() => onInspectColumn(fact.name)}
-                  >
-                    <td className="py-1.5 px-3">
-                      <div className="font-medium text-zinc-100">{fact.name}</div>
-                      <div className="text-[10px] text-zinc-600">{fact.raw_dtype}</div>
+                  <tr key={fact.name} className="is-row-link">
+                    <td>
+                      <button
+                        type="button"
+                        onClick={() => onInspectColumn(fact.name)}
+                        className="block text-left"
+                        title="Open in the profiler"
+                      >
+                        <span className="block font-mono font-medium text-accent hover:underline">{fact.name}</span>
+                        <span className="block text-xs text-ink-3">{fact.raw_dtype}</span>
+                      </button>
                     </td>
-                    <td className="py-1.5 px-3 text-zinc-400">
-                      {fact.inferred_type.replace(/_/g, ' ')}
+                    <td className="text-ink-2">
+                      {fmtType(fact.inferred_type)}
                       {fact.is_quasi_constant && (
-                        <span
-                          className="ml-1.5 px-1 py-0.5 rounded border text-[9px] text-amber-400 bg-amber-500/10 border-amber-500/20"
-                          title={`One value fills ${fact.dominant_value_pct ?? 99}% of rows (rule R-FLT-04, advisory)`}
-                        >
-                          quasi-constant
+                        <span className="ml-2 align-middle">
+                          <Badge tone="warn" title={`One value fills ${fact.dominant_value_pct ?? 99}% of rows (rule R-FLT-04, advisory)`}>
+                            near-constant
+                          </Badge>
                         </span>
                       )}
                     </td>
-                    <td className={`py-1.5 px-3 tabular-nums ${fact.missing_pct > 0 ? 'text-amber-400' : 'text-zinc-500'}`}>
+                    <td className={`tabular-nums ${fact.missing_pct > 0 ? 'font-medium text-warn' : 'text-ink-3'}`}>
                       {fact.missing_pct}%
-                      <span className="text-zinc-600 ml-1">({fact.missing_count})</span>
+                      <span className="ml-1 font-normal text-ink-3">({fact.missing_count})</span>
                     </td>
-                    <td className="py-1.5 px-3 tabular-nums text-zinc-300">
-                      {fact.unique_count}
-                      <span className="text-zinc-600 ml-1">{(fact.uniqueness_ratio * 100).toFixed(0)}%</span>
+                    <td className="tabular-nums">
+                      {fact.unique_count.toLocaleString()}
+                      <span className="ml-1 text-ink-3">{(fact.uniqueness_ratio * 100).toFixed(0)}%</span>
                     </td>
-                    <td className="py-1.5 px-3 text-zinc-400 truncate max-w-[180px]" title={String(center)}>{center}</td>
-                    <td className="py-1.5 px-3 text-zinc-400 truncate max-w-[160px]" title={String(range)}>{range}</td>
-                    <td className="py-1.5 px-3">
+                    <td className="max-w-[200px] truncate font-mono text-[0.8125rem] text-ink-2" title={center}>
+                      {center}
+                    </td>
+                    <td className="max-w-[200px] truncate font-mono text-[0.8125rem] text-ink-2" title={range}>
+                      {range}
+                    </td>
+                    <td>
                       <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onOpenRecipes(fact.name);
-                        }}
-                        className={`px-1.5 py-0.5 rounded border text-[10px] ${badge.cls}`}
+                        type="button"
+                        onClick={() => onOpenRecipes(fact.name)}
+                        title="Open the recipe for this column"
+                        className="rounded-md"
                       >
-                        {badge.text}
+                        <StatusBadge status={rec?.status} />
                       </button>
                     </td>
                   </tr>
                 );
               })}
+              {rows.length === 0 && (
+                <tr>
+                  <td colSpan={7} className="py-10 text-center text-ink-3">
+                    No column matches that search and type filter.
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
-      </div>
+      </section>
 
-      <div className="rounded-xl glass-card overflow-hidden">
-        <div className="p-3 bg-black border-b border-white/[0.06] flex items-center justify-between font-mono">
-          <div className="flex items-center space-x-2 text-xs text-zinc-300 font-medium">
-            <Table className="w-3.5 h-3.5 text-zinc-400" />
-            <span>Source preview</span>
-            <span className="text-[10px] text-zinc-600">first {preview.length} rows · nulls highlighted</span>
+      <section className="panel overflow-hidden" aria-labelledby="preview-title">
+        <div className="panel-head">
+          <div>
+            <h2 id="preview-title" className="panel-title">
+              Source preview
+            </h2>
+            <p className="panel-sub">First {preview.length} rows of {metadata.filename}. Missing values are highlighted.</p>
           </div>
-          <span className="text-[10px] text-zinc-600">{metadata.filename}</span>
         </div>
-
-        <div className="overflow-x-auto max-h-[420px]">
-          <table className="w-full text-left text-xs border-collapse font-mono">
+        <div className="max-h-[440px] overflow-auto">
+          <table className="tbl">
             <thead>
-              <tr className="border-b border-white/[0.06] text-zinc-500 text-[10px]">
-                <th className="py-2 px-3 sticky top-0 bg-zinc-950">#</th>
-                {columns.map((col) => {
-                  const fact = columnFacts[col];
-                  return (
-                    <th
-                      key={col}
-                      className="py-2 px-3 whitespace-nowrap sticky top-0 bg-zinc-950 cursor-pointer hover:text-zinc-200"
-                      onClick={() => onInspectColumn(col)}
-                      title="Open profiler"
-                    >
-                      <div className="text-zinc-300">{col}</div>
-                      <div className="font-normal text-zinc-600">{fact?.inferred_type.replace(/_/g, ' ')}</div>
-                    </th>
-                  );
-                })}
+              <tr>
+                <th className="w-12 text-right">#</th>
+                {columns.map((col) => (
+                  <th key={col}>
+                    <button type="button" onClick={() => onInspectColumn(col)} className="text-left hover:text-accent" title="Open in the profiler">
+                      <span className="block font-mono">{col}</span>
+                      <span className="block font-normal text-ink-3">{fmtType(columnFacts[col]?.inferred_type)}</span>
+                    </button>
+                  </th>
+                ))}
               </tr>
             </thead>
-            <tbody className="divide-y divide-white/[0.03] text-zinc-300 text-[11px]">
+            <tbody>
               {preview.map((row, idx) => (
-                <tr key={idx} className="hover:bg-zinc-900/40">
-                  <td className="py-1.5 px-3 text-zinc-600 select-none text-[10px] tabular-nums">{idx + 1}</td>
+                <tr key={idx}>
+                  <td className="text-right text-ink-3">{idx + 1}</td>
                   {columns.map((col) => {
                     const missing = isMissing(row[col]);
                     return (
-                      <td key={col} className={`py-1.5 px-3 whitespace-nowrap tabular-nums ${missing ? 'cell-null' : ''}`}>
-                        {missing ? 'null' : String(row[col])}
+                      <td key={col} className={`whitespace-nowrap font-mono text-[0.8125rem] ${missing ? 'cell-null' : ''}`}>
+                        {missing ? 'missing' : String(row[col])}
                       </td>
                     );
                   })}
@@ -294,7 +268,7 @@ export const DatasetOverview: React.FC<DatasetOverviewProps> = ({
             </tbody>
           </table>
         </div>
-      </div>
+      </section>
     </div>
   );
 };

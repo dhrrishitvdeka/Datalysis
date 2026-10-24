@@ -1,6 +1,7 @@
-import React, { useState, useRef } from 'react';
-import { UploadCloud, ArrowRight, ShieldCheck, Cpu, Terminal } from 'lucide-react';
+import React, { useRef, useState } from 'react';
+import { FileUp, ShieldCheck } from 'lucide-react';
 import type { SampleDatasetInfo } from '../types';
+import { StatusBadge } from './ui';
 
 interface UploadZoneProps {
   onFileUpload: (file: File) => void;
@@ -10,6 +11,24 @@ interface UploadZoneProps {
   autoRepair: boolean;
   onAutoRepairChange: (value: boolean) => void;
 }
+
+const OUTPUTS = [
+  ['A dictionary of every column', 'Type, missing values, spread and the odd values that deserve a second look.'],
+  ['A recipe for each column', 'Which imputation, scaling and encoding to use, with the rule that says why.'],
+  ['A pipeline you can run', 'A scikit-learn script and notebook, plus the cleaned data as CSV, Excel or Parquet.'],
+];
+
+// Static illustration of the Overview page, so a first-time visitor sees what the tool produces
+const EXAMPLE_ROWS = [
+  { column: 'PassengerId', meta: 'identifier · 250 unique', missing: '0%', status: 'DROP_RECOMMENDED', note: 'An ID that leaks the target' },
+  { column: 'Cabin', meta: 'categorical · 4 unique', missing: '78%', status: 'DROP_RECOMMENDED', note: 'Too sparse to fill in' },
+  { column: 'Age', meta: 'numeric · 163 unique', missing: '21%', status: 'REQUIRES_TRANSFORMATION', note: 'Median, plus a missing flag' },
+  { column: 'Fare', meta: 'numeric · skew 4.7', missing: '0%', status: 'REQUIRES_TRANSFORMATION', note: 'Log transform for the long tail' },
+  { column: 'Embarked', meta: 'categorical · 3 unique', missing: '2%', status: 'READY_WITH_PREPROCESSING', note: 'Most frequent, then one-hot' },
+];
+
+/** "Messy Titanic Passengers (Classification)" -> "Titanic Passengers", for a compact button. */
+const shortName = (name: string) => name.replace(/^Messy\s+/i, '').replace(/\s*\(.*\)\s*$/, '');
 
 export const UploadZone: React.FC<UploadZoneProps> = ({
   onFileUpload,
@@ -22,195 +41,185 @@ export const UploadZone: React.FC<UploadZoneProps> = ({
   const [isDragOver, setIsDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragOver(true);
-  };
-
-  const handleDragLeave = () => {
-    setIsDragOver(false);
+  const pick = () => {
+    if (!isLoading) fileInputRef.current?.click();
   };
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragOver(false);
-    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      onFileUpload(e.dataTransfer.files[0]);
-    }
+    if (isLoading) return;
+    const file = e.dataTransfer.files?.[0];
+    if (file) onFileUpload(file);
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      onFileUpload(e.target.files[0]);
-    }
+    const file = e.target.files?.[0];
+    if (file) onFileUpload(file);
+    e.target.value = ''; // lets the same file be chosen twice in a row
   };
 
   return (
-    <div className="max-w-4xl mx-auto py-10 px-4 sm:px-6">
-      {/* Hero Section */}
-      <div className="text-center space-y-3 mb-10 flex flex-col items-center">
-        <div className="w-14 h-14 rounded-2xl overflow-hidden border border-white/15 shadow-2xl mb-1 bg-zinc-950 flex items-center justify-center">
-          <img src="/logo.png" alt="Datalysis Logo" className="w-full h-full object-cover" />
-        </div>
-
-        <div className="inline-flex items-center space-x-2 px-2.5 py-1 rounded-full bg-zinc-900 border border-white/[0.08] text-zinc-400 text-xs font-mono">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-          <span>Deterministic Expert System • 100% Local Intelligence</span>
-        </div>
-        <h1 className="text-3xl sm:text-4xl font-semibold tracking-tight text-white">
-          Profile, diagnose, and clean tabular data
-        </h1>
-        <p className="text-sm text-zinc-400 max-w-xl mx-auto leading-relaxed">
-          Load a CSV, Excel, JSON, or Parquet file. Get a column dictionary, missingness and outlier diagnostics, and a runnable scikit-learn pipeline — all local.
-        </p>
-      </div>
-
-      {/* Upload Drag & Drop Container */}
-      <div
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onDrop={handleDrop}
-        onClick={() => fileInputRef.current?.click()}
-        className={`relative cursor-pointer rounded-xl p-10 text-center transition-all duration-200 glass-card ${
-          isDragOver
-            ? 'border-white/40 bg-zinc-900/90'
-            : 'border-white/[0.08] hover:border-white/20 hover:bg-zinc-900/40'
-        }`}
-      >
-        <input
-          type="file"
-          ref={fileInputRef}
-          onChange={handleFileChange}
-          accept=".csv,.tsv,.txt,.tab,.xlsx,.xls,.json,.jsonl,.parquet,.pqt,.feather"
-          className="hidden"
-        />
-
-        {isLoading ? (
-          <div className="py-8 space-y-3">
-            <div className="w-10 h-10 mx-auto border-2 border-zinc-700 border-t-white rounded-full animate-spin" />
-            <div className="space-y-1">
-              <h3 className="text-sm font-medium text-white font-mono">Running Rule Inferences...</h3>
-              <p className="text-xs text-zinc-500 font-mono">Extracting statistical facts • Evaluating rules</p>
-            </div>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            <div className="w-12 h-12 mx-auto rounded-lg bg-zinc-900 border border-white/10 flex items-center justify-center text-zinc-300">
-              <UploadCloud className="w-6 h-6" />
-            </div>
-
-            <div>
-              <p className="text-sm font-medium text-zinc-200">
-                Drop your dataset here, or <span className="text-white underline underline-offset-4">browse</span>
-              </p>
-              <p className="text-xs text-zinc-500 mt-1">
-                Auto-detects delimiters (comma, tab, semicolon, pipe) and UTF-8/Latin-1 encodings
-              </p>
-            </div>
-
-            {/* Supported formats */}
-            <div className="flex flex-wrap justify-center gap-1.5 pt-1">
-              {['CSV', 'TSV', 'Excel (.xlsx)', 'JSON', 'Parquet'].map((fmt) => (
-                <span
-                  key={fmt}
-                  className="px-2 py-0.5 rounded bg-zinc-900 border border-white/[0.06] text-[11px] font-mono text-zinc-400"
-                >
-                  {fmt}
-                </span>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Auto-repair toggle: applies to uploads and to the sample datasets below */}
-      <label className="mt-3 flex items-start gap-2.5 cursor-pointer select-none px-1">
-        <input
-          type="checkbox"
-          checked={autoRepair}
-          onChange={(e) => onAutoRepairChange(e.target.checked)}
-          disabled={isLoading}
-          className="mt-0.5 accent-emerald-500"
-        />
-        <span className="text-xs text-zinc-400 leading-relaxed">
-          <span className="font-semibold text-zinc-200">Auto-repair data quality issues</span>
-          {' '}— fixes disguised missing values (?, N/A, -999), numbers stored as text ($1,200), yes/no text and
-          inconsistent category spellings before analysis. Every fix is listed in the Data Repairs tab.
-        </span>
-      </label>
-
-      {/* Feature Specs */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-4">
-        <div className="p-4 rounded-xl glass-card space-y-1.5">
-          <div className="flex items-center space-x-2 text-zinc-300">
-            <Cpu className="w-3.5 h-3.5 text-zinc-400" />
-            <h4 className="text-xs font-semibold uppercase tracking-wider">Zero LLM Dependencies</h4>
-          </div>
-          <p className="text-xs text-zinc-500 leading-relaxed">
-            Deterministic rules: Tukey IQR, skewness, Pearson collinearity, and co-missing structure. No model API.
+    <div className="mx-auto max-w-[1280px] px-4 sm:px-8">
+      {/* The whole first screen: promise, the file drop and a sample, with the proof beside it. No scrolling needed to start. */}
+      <section className="grid items-center gap-x-16 gap-y-10 py-10 lg:min-h-[calc(100vh-3.5rem)] lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)] lg:py-8">
+        <div>
+          <h1 className="max-w-[22ch] text-balance text-4xl font-semibold leading-[1.08] tracking-tight sm:text-[2.875rem]">
+            Find out what’s wrong with your data before you train on it
+          </h1>
+          <p className="mt-4 max-w-xl text-lg text-ink-2">
+            Datalysis profiles every column, flags missing values and outliers, then writes the scikit-learn pipeline that fixes them.
           </p>
-        </div>
 
-        <div className="p-4 rounded-xl glass-card space-y-1.5">
-          <div className="flex items-center space-x-2 text-zinc-300">
-            <ShieldCheck className="w-3.5 h-3.5 text-zinc-400" />
-            <h4 className="text-xs font-semibold uppercase tracking-wider">Imputation & Outlier Recipes</h4>
-          </div>
-          <p className="text-xs text-zinc-500 leading-relaxed">
-            Per-feature recommendations: median/mean, KNN multivariate, Winsorization, and power transforms.
-          </p>
-        </div>
+          <div
+            onDragOver={(e) => {
+              e.preventDefault();
+              setIsDragOver(true);
+            }}
+            onDragLeave={() => setIsDragOver(false)}
+            onDrop={handleDrop}
+            className={`mt-7 rounded-2xl border-2 border-dashed p-5 transition-colors ${
+              isDragOver ? 'border-accent bg-accent-soft' : 'border-line-strong bg-surface'
+            }`}
+          >
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={handleFileChange}
+              accept=".csv,.tsv,.txt,.tab,.xlsx,.xls,.json,.jsonl,.parquet,.pqt,.feather"
+              className="hidden"
+              tabIndex={-1}
+            />
 
-        <div className="p-4 rounded-xl glass-card space-y-1.5">
-          <div className="flex items-center space-x-2 text-zinc-300">
-            <Terminal className="w-3.5 h-3.5 text-zinc-400" />
-            <h4 className="text-xs font-semibold uppercase tracking-wider">Pipeline Synthesis</h4>
-          </div>
-          <p className="text-xs text-zinc-500 leading-relaxed">
-            One-click Scikit-Learn `ColumnTransformer` script generation and cleaned dataset export.
-          </p>
-        </div>
-      </div>
-
-      {/* Sample Datasets */}
-      <div className="mt-10 space-y-3">
-        <div className="flex items-center justify-between">
-          <span className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
-            Or Test With Sample Datasets
-          </span>
-          <span className="text-[11px] text-zinc-600 font-mono">1-click instant audit</span>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          {sampleDatasets.map((s) => (
-            <div
-              key={s.id}
-              onClick={() => onSampleSelect(s.id)}
-              className="p-4 rounded-xl glass-card hover:bg-zinc-900/60 cursor-pointer transition group flex flex-col justify-between space-y-3"
-            >
-              <div>
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-zinc-900 text-zinc-400 border border-white/[0.06]">
-                    {s.id.toUpperCase()}
-                  </span>
-                  <ArrowRight className="w-3.5 h-3.5 text-zinc-600 group-hover:text-zinc-200 group-hover:translate-x-0.5 transition" />
+            {isLoading ? (
+              <div role="status" aria-live="polite" className="flex items-center gap-4 py-2">
+                <span className="h-9 w-9 shrink-0 animate-spin rounded-full border-[3px] border-line-strong border-t-accent" />
+                <div>
+                  <p className="text-lg font-semibold">Profiling your data…</p>
+                  <p className="text-sm text-ink-3">Reading the file, computing statistics, applying rules.</p>
                 </div>
-                <h4 className="text-xs font-semibold text-zinc-200 mt-2 group-hover:text-white transition">
-                  {s.name}
-                </h4>
-                <p className="text-[11px] text-zinc-500 mt-1 leading-relaxed">
-                  {s.description}
-                </p>
               </div>
+            ) : (
+              <div className="flex flex-wrap items-center gap-x-5 gap-y-4">
+                <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-sunken text-ink-2">
+                  <FileUp className="h-6 w-6" aria-hidden />
+                </span>
+                <div className="min-w-0 flex-1 basis-56">
+                  <p className="text-lg font-semibold">Drop a file here</p>
+                  <p className="text-sm text-ink-3">CSV, TSV, Excel, JSON or Parquet. Delimiter and encoding are detected for you.</p>
+                </div>
+                <button type="button" onClick={pick} className="btn btn-primary !h-11 !px-6 !text-base">
+                  Choose a file
+                </button>
+              </div>
+            )}
+          </div>
 
-              <div className="pt-2 border-t border-white/[0.04] text-[11px] text-zinc-400 font-mono flex items-center justify-between">
-                <span>Auto-Diagnose</span>
-                <span className="text-zinc-300">Load & Audit →</span>
+          <label className="mt-4 flex max-w-xl cursor-pointer items-start gap-3">
+            <input
+              type="checkbox"
+              checked={autoRepair}
+              onChange={(e) => onAutoRepairChange(e.target.checked)}
+              disabled={isLoading}
+              className="mt-1 h-4 w-4 shrink-0 accent-[rgb(var(--accent))]"
+            />
+            <span className="text-sm text-ink-2">
+              <span className="font-semibold text-ink">Repair obvious data-entry problems first</span> (“N/A”, −999, “$1,200” stored as
+              text). Each fix is listed under Data repairs.
+            </span>
+          </label>
+
+          <div className="mt-6 border-t border-line pt-5">
+            <p className="mb-3 text-sm font-medium text-ink-2">No file handy? Open a sample dataset</p>
+            {sampleDatasets.length === 0 && <p className="text-sm text-ink-3">Samples load once the backend is running.</p>}
+            <ul className="grid gap-3 sm:grid-cols-3">
+              {sampleDatasets.map((s) => (
+                <li key={s.id} className="flex">
+                  <button
+                    type="button"
+                    disabled={isLoading}
+                    onClick={() => onSampleSelect(s.id)}
+                    title={`${s.name}. ${s.description}`}
+                    className="group flex w-full flex-col rounded-xl border border-line bg-surface p-3.5 text-left transition-colors hover:border-accent hover:bg-sunken disabled:opacity-50"
+                  >
+                    <span className="text-sm font-semibold leading-snug">{shortName(s.name)}</span>
+                    <span className="mt-1 line-clamp-2 text-xs text-ink-3 [@media(max-height:720px)]:hidden">{s.description}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+
+        <figure className="panel overflow-hidden" aria-label="Example of the column recommendations Datalysis produces">
+          <div className="border-b border-line px-5 py-3.5">
+            <p className="font-semibold">What you get for every column</p>
+            <p className="text-sm text-ink-3">An example from the Titanic sample, not your data.</p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="tbl">
+              <thead>
+                <tr>
+                  <th>Column</th>
+                  <th className="text-right">Missing</th>
+                  <th>Recommendation</th>
+                </tr>
+              </thead>
+              <tbody>
+                {EXAMPLE_ROWS.map((r) => (
+                  <tr key={r.column} className="h-[3.75rem]">
+                    <td className="!py-2">
+                      <span className="block font-mono font-medium">{r.column}</span>
+                      <span className="block text-xs text-ink-3">{r.meta}</span>
+                    </td>
+                    <td className={`!py-2 text-right font-mono tabular-nums ${r.missing !== '0%' ? 'font-medium text-warn' : 'text-ink-3'}`}>
+                      {r.missing}
+                    </td>
+                    <td className="!py-2">
+                      <StatusBadge status={r.status} />
+                      <span className="mt-0.5 block text-xs text-ink-3">{r.note}</span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <dl className="grid grid-cols-3 gap-4 border-t border-line bg-sunken/60 px-5 py-3.5">
+            {[
+              ['Health score', '72 / 100'],
+              ['Cells missing', '9.2%'],
+              ['Fixes suggested', '5 of 11 columns'],
+            ].map(([k, v]) => (
+              <div key={k}>
+                <dt className="text-sm text-ink-3">{k}</dt>
+                <dd className="font-mono text-base font-medium">{v}</dd>
               </div>
+            ))}
+          </dl>
+        </figure>
+      </section>
+
+      {/* Below the fold: reference only, nothing needed to get started */}
+      <section aria-labelledby="outputs-heading" className="border-t border-line py-12">
+        <h2 id="outputs-heading" className="mb-6 text-xl">
+          What you get back
+        </h2>
+        <dl className="grid gap-x-10 gap-y-6 md:grid-cols-3">
+          {OUTPUTS.map(([term, detail]) => (
+            <div key={term}>
+              <dt className="font-semibold">{term}</dt>
+              <dd className="mt-1 text-ink-3">{detail}</dd>
             </div>
           ))}
-        </div>
-      </div>
+        </dl>
+        <p className="mt-10 flex items-start gap-3 rounded-xl bg-sunken px-5 py-4 text-ink-2">
+          <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-good" aria-hidden />
+          <span>
+            Everything runs on this computer. No data is uploaded and no language model is involved: every recommendation comes
+            from a fixed statistical rule that you can read in the rule log.
+          </span>
+        </p>
+      </section>
     </div>
   );
 };

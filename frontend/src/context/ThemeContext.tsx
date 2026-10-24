@@ -13,7 +13,7 @@ const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [theme, setThemeState] = useState<Theme>(() => {
     const saved = localStorage.getItem('datalysis-theme') as Theme | null;
-    return saved || 'dark';
+    return saved || 'system';
   });
 
   const [systemIsDark, setSystemIsDark] = useState<boolean>(() => {

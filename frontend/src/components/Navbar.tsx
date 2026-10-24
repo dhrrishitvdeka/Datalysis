@@ -1,210 +1,184 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
-  FileSpreadsheet,
-  RefreshCw,
-  Layers,
-  SlidersHorizontal,
-  BarChart2,
-  GitFork,
+  BookOpen,
+  ChevronDown,
   Code2,
-  CheckCircle,
-  LineChart,
-  Sun,
-  Moon,
+  Download,
+  FileJson,
+  FileSpreadsheet,
   Laptop,
+  Moon,
+  RefreshCw,
+  Sun,
   Target,
-  Wrench,
 } from 'lucide-react';
 import type { AnalysisResponse } from '../types';
 import { useTheme } from '../context/ThemeContext';
+import type { Theme } from '../context/ThemeContext';
+import { getNotebookDownloadUrl, getPipelineDownloadUrl, getReportDownloadUrl } from '../services/api';
 
 interface NavbarProps {
   data: AnalysisResponse | null;
-  activeTab: string;
-  setActiveTab: (tab: string) => void;
   onReset: () => void;
-  onOpenTargetModal?: () => void;
-  selectedTarget?: string | null;
-  tabCounts?: {
-    repairs?: number;
-    recommendations?: number;
-    distributions?: number;
-    correlations?: number;
-  };
+  onOpenTargetModal: () => void;
+  selectedTarget: string | null;
 }
 
-export const Navbar: React.FC<NavbarProps> = ({
-  data,
-  activeTab,
-  setActiveTab,
-  onReset,
-  onOpenTargetModal,
-  selectedTarget,
-  tabCounts,
-}) => {
+const THEMES: { id: Theme; label: string; icon: typeof Sun }[] = [
+  { id: 'light', label: 'Light theme', icon: Sun },
+  { id: 'system', label: 'Match system theme', icon: Laptop },
+  { id: 'dark', label: 'Dark theme', icon: Moon },
+];
+
+const ThemeSwitch: React.FC = () => {
   const { theme, setTheme } = useTheme();
-  const health = data?.inference.health_score;
-
-  const getGradeBadge = (grade?: string) => {
-    switch (grade) {
-      case 'A+':
-      case 'A':
-        return 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20';
-      case 'B':
-        return 'text-sky-400 bg-sky-500/10 border-sky-500/20';
-      case 'C':
-        return 'text-amber-400 bg-amber-500/10 border-amber-500/20';
-      default:
-        return 'text-rose-400 bg-rose-500/10 border-rose-500/20';
-    }
-  };
-
-  const toggleTheme = () => {
-    if (theme === 'dark') setTheme('light');
-    else if (theme === 'light') setTheme('system');
-    else setTheme('dark');
-  };
-
-  const getThemeIcon = () => {
-    if (theme === 'light') return <Sun className="w-3.5 h-3.5 text-amber-400" />;
-    if (theme === 'dark') return <Moon className="w-3.5 h-3.5 text-blue-400" />;
-    return <Laptop className="w-3.5 h-3.5 text-zinc-400" />;
-  };
-
-  const navItems = [
-    { id: 'overview', label: 'Overview', icon: Layers },
-    { id: 'repairs', label: 'Data Repairs', icon: Wrench, count: tabCounts?.repairs },
-    { id: 'visualizer', label: 'Profiler', icon: LineChart },
-    { id: 'recommendations', label: 'Recipe Customizer', icon: SlidersHorizontal, count: tabCounts?.recommendations },
-    { id: 'distributions', label: 'Outliers', icon: BarChart2, count: tabCounts?.distributions },
-    { id: 'correlations', label: 'Collinearity', icon: GitFork, count: tabCounts?.correlations },
-    { id: 'pipeline', label: 'Pipeline Code', icon: Code2 },
-    { id: 'cleaned', label: 'Cleaned & Diff', icon: CheckCircle },
-  ];
-
   return (
-    <header className="sticky top-0 z-50 border-b border-white/[0.08] bg-black/85 backdrop-blur-2xl">
-      <div className="max-w-[1600px] mx-auto px-4 sm:px-6">
-        <div className="flex items-center justify-between h-12">
-          {/* Logo & Brand */}
-          <div className="flex items-center space-x-3 cursor-pointer" onClick={onReset}>
-            <div className="w-7 h-7 rounded-md bg-zinc-950 border border-white/10 flex items-center justify-center overflow-hidden">
-              <img src="/logo.png" alt="Datalysis" className="w-full h-full object-cover" />
-            </div>
-            <div className="flex items-baseline space-x-2">
-              <span className="font-semibold text-sm tracking-tight text-white">Datalysis</span>
-              <span className="hidden sm:inline text-[10px] uppercase font-mono tracking-widest text-zinc-500 px-1.5 py-0.5 rounded bg-zinc-900 border border-zinc-800">
-                v1.1
-              </span>
-            </div>
-          </div>
-
-          {/* Active Dataset Metadata Badge */}
-          {data && (
-            <div className="hidden md:flex items-center space-x-2">
-              <div className="flex items-center space-x-2 px-2.5 py-1 rounded-md bg-zinc-950 border border-white/[0.06] text-xs text-zinc-300 font-mono">
-                <FileSpreadsheet className="w-3.5 h-3.5 text-zinc-400" />
-                <span className="font-medium max-w-[180px] truncate text-zinc-200">
-                  {data.metadata.filename}
-                </span>
-                <span className="text-zinc-600">/</span>
-                <span className="tabular-nums text-zinc-400">
-                  {data.metadata.rows.toLocaleString()} × {data.metadata.columns}
-                </span>
-              </div>
-
-              {health && (
-                <div
-                  className={`flex items-center space-x-1.5 px-2.5 py-1 rounded-md border text-xs font-mono font-medium ${getGradeBadge(
-                    health.grade
-                  )}`}
-                >
-                  <span className="tabular-nums">{health.overall_score}</span>
-                  <span className="text-[10px] px-1 rounded bg-black/40">{health.grade}</span>
-                </div>
-              )}
-
-              {/* Target Indicator */}
-              {selectedTarget && (
-                <div className="flex items-center space-x-1.5 px-2 py-1 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-xs font-mono text-emerald-400">
-                  <Target className="w-3 h-3" />
-                  <span>Target: {selectedTarget}</span>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Right Controls: Supervised Target Mode, Theme Switcher, New File */}
-          <div className="flex items-center space-x-2">
-            {data && onOpenTargetModal && (
-              <button
-                onClick={onOpenTargetModal}
-                className="flex items-center space-x-1.5 px-2.5 py-1 rounded-md text-xs font-mono font-medium text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 transition"
-                title="Supervised Target Mode: detect problem type, evaluate class balance and feature importance"
-              >
-                <Target className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Target Mode</span>
-              </button>
-            )}
-
-            {/* Theme Toggle Button */}
-            <button
-              onClick={toggleTheme}
-              className="p-1.5 rounded-md text-zinc-400 hover:text-zinc-100 hover:bg-zinc-900 border border-transparent hover:border-zinc-800 transition flex items-center space-x-1"
-              title={`Theme: ${theme} (Click to switch)`}
-            >
-              {getThemeIcon()}
-              <span className="text-[10px] uppercase font-mono hidden sm:inline text-zinc-500">
-                {theme}
-              </span>
-            </button>
-
-            {data && (
-              <button
-                onClick={onReset}
-                className="flex items-center space-x-1 px-2.5 py-1 rounded-md text-xs font-medium text-zinc-400 hover:text-zinc-100 hover:bg-zinc-900 border border-transparent hover:border-zinc-800 transition"
-              >
-                <RefreshCw className="w-3 h-3" />
-                <span className="hidden sm:inline">New file</span>
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* Tab Navigation Strip */}
-        {data && (
-          <div className="flex space-x-1 overflow-x-auto py-1.5 border-t border-white/[0.04] no-scrollbar">
-            {navItems.map((item) => {
-              const active = activeTab === item.id;
-              const Icon = item.icon;
-              const count = item.count ?? 0;
-              return (
-                <button
-                  key={item.id}
-                  onClick={() => setActiveTab(item.id)}
-                  className={`px-3 py-1 rounded-md text-xs font-medium whitespace-nowrap transition flex items-center space-x-1.5 ${
-                    active
-                      ? 'bg-zinc-100 text-zinc-950 shadow-sm font-semibold'
-                      : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900/60'
-                  }`}
-                >
-                  <Icon className={`w-3.5 h-3.5 ${active ? 'text-zinc-950' : 'text-zinc-500'}`} />
-                  <span>{item.label}</span>
-                  {count > 0 && (
-                    <span
-                      className={`text-[10px] font-mono tabular-nums px-1 rounded ${
-                        active ? 'bg-zinc-900 text-zinc-100' : 'bg-zinc-800 text-zinc-300'
-                      }`}
-                    >
-                      {count}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        )}
-      </div>
-    </header>
+    <div className="seg !p-0.5" role="group" aria-label="Colour theme">
+      {THEMES.map(({ id, label, icon: Icon }) => (
+        <button
+          key={id}
+          type="button"
+          aria-pressed={theme === id}
+          aria-label={label}
+          title={label}
+          className="!h-8 !w-8 !justify-center !px-0"
+          onClick={() => setTheme(id)}
+        >
+          <Icon className="h-4 w-4" aria-hidden />
+        </button>
+      ))}
+    </div>
   );
 };
+
+const EXPORTS = [
+  {
+    icon: FileJson,
+    label: 'Audit report',
+    detail: 'JSON with every fact and rule that fired',
+    href: getReportDownloadUrl(),
+    download: undefined,
+  },
+  {
+    icon: Code2,
+    label: 'Pipeline script',
+    detail: 'scikit-learn ColumnTransformer, .py',
+    href: getPipelineDownloadUrl(),
+    download: 'datalysis_pipeline.py',
+  },
+  {
+    icon: BookOpen,
+    label: 'Notebook',
+    detail: 'The same pipeline with explanations, .ipynb',
+    href: getNotebookDownloadUrl(),
+    download: undefined,
+  },
+];
+
+const ExportMenu: React.FC = () => {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        className="btn"
+        aria-expanded={open}
+        aria-haspopup="true"
+        onClick={() => setOpen((o) => !o)}
+      >
+        <Download className="h-4 w-4" aria-hidden />
+        <span className="hidden sm:inline">Export</span>
+        <ChevronDown className="h-4 w-4 text-ink-3" aria-hidden />
+      </button>
+      {open && (
+        <div className="absolute right-0 z-50 mt-2 w-80 rounded-xl bg-surface p-1.5 shadow-pop">
+          {EXPORTS.map(({ icon: Icon, label, detail, href, download }) => (
+            <a
+              key={label}
+              href={href}
+              download={download ?? true}
+              onClick={() => setOpen(false)}
+              className="flex items-start gap-3 rounded-lg px-3 py-2.5 hover:bg-sunken"
+            >
+              <Icon className="mt-0.5 h-4 w-4 shrink-0 text-ink-3" aria-hidden />
+              <span>
+                <span className="block text-sm font-medium">{label}</span>
+                <span className="block text-xs text-ink-3">{detail}</span>
+              </span>
+            </a>
+          ))}
+          <p className="px-3 pb-1.5 pt-2 text-xs text-ink-3">
+            To download the cleaned data itself, open Clean and export.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export const Navbar: React.FC<NavbarProps> = ({ data, onReset, onOpenTargetModal, selectedTarget }) => (
+  <header className="sticky top-0 z-40 border-b border-line bg-surface/95 backdrop-blur">
+    <div className="flex h-14 items-center gap-3 px-4 sm:px-6">
+      <button type="button" onClick={onReset} className="flex shrink-0 items-center gap-2.5 rounded-lg pr-2" title="Back to start">
+        <img src="/logo.png" alt="" className="h-7 w-7 rounded-md object-cover" />
+        <span className="text-lg font-semibold tracking-tight">Datalysis</span>
+      </button>
+
+      {data && (
+        <div className="hidden min-w-0 items-center gap-2 border-l border-line pl-4 sm:flex">
+          <FileSpreadsheet className="h-4 w-4 shrink-0 text-ink-3" aria-hidden />
+          <span className="truncate text-sm font-medium" title={data.metadata.filename}>
+            {data.metadata.filename}
+          </span>
+          <span className="shrink-0 text-sm tabular-nums text-ink-3">
+            {data.metadata.rows.toLocaleString()} rows × {data.metadata.columns} columns
+          </span>
+        </div>
+      )}
+
+      <div className="ml-auto flex items-center gap-2">
+        {data && (
+          <>
+            <button
+              type="button"
+              className={`btn ${selectedTarget ? '!border-accent !text-accent' : ''}`}
+              onClick={onOpenTargetModal}
+              title="Pick the column you want to predict. Datalysis then checks class balance, feature usefulness and leakage."
+            >
+              <Target className="h-4 w-4" aria-hidden />
+              <span className="hidden max-w-[10rem] truncate md:inline">
+                {selectedTarget ? `Target: ${selectedTarget}` : 'Set target'}
+              </span>
+            </button>
+            <ExportMenu />
+          </>
+        )}
+        <ThemeSwitch />
+        {data && (
+          <button type="button" className="btn btn-quiet" onClick={onReset} title="Discard this analysis and load another file">
+            <RefreshCw className="h-4 w-4" aria-hidden />
+            <span className="hidden lg:inline">New file</span>
+          </button>
+        )}
+      </div>
+    </div>
+  </header>
+);
