@@ -27,6 +27,7 @@ export const DatasetOverview: React.FC<DatasetOverviewProps> = ({
   onInspectColumn,
   onOpenRecipes,
 }) => {
+  const hiddenDuplicates = summary.hidden_duplicate_rows ?? 0;
   const columns = preview.length > 0 ? Object.keys(preview[0]) : Object.keys(columnFacts);
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState<string | null>(null);
@@ -103,7 +104,13 @@ export const DatasetOverview: React.FC<DatasetOverviewProps> = ({
           { label: 'Rows', value: summary.row_count.toLocaleString(), sub: 'records', warn: false },
           { label: 'Columns', value: String(summary.col_count), sub: 'features', warn: false },
           { label: 'Missing', value: `${summary.overall_missing_pct}%`, sub: `${summary.total_missing_cells.toLocaleString()} cells`, warn: summary.overall_missing_pct > 0 },
-          { label: 'Duplicates', value: String(summary.duplicate_rows), sub: `${summary.duplicate_pct}% overlap`, warn: summary.duplicate_rows > 0 },
+          {
+            label: 'Duplicates',
+            value: String(summary.duplicate_rows),
+            // hidden duplicates differ only by an ID column (rule R-INT-01)
+            sub: hiddenDuplicates > 0 ? `${summary.duplicate_pct}% · +${hiddenDuplicates} hidden by ID` : `${summary.duplicate_pct}% overlap`,
+            warn: summary.duplicate_rows > 0 || hiddenDuplicates > 0,
+          },
           { label: 'Memory', value: `${summary.memory_mb} MB`, sub: 'in-process', warn: false },
           {
             label: 'Format',
@@ -199,7 +206,17 @@ export const DatasetOverview: React.FC<DatasetOverviewProps> = ({
                       <div className="font-medium text-zinc-100">{fact.name}</div>
                       <div className="text-[10px] text-zinc-600">{fact.raw_dtype}</div>
                     </td>
-                    <td className="py-1.5 px-3 text-zinc-400">{fact.inferred_type.replace(/_/g, ' ')}</td>
+                    <td className="py-1.5 px-3 text-zinc-400">
+                      {fact.inferred_type.replace(/_/g, ' ')}
+                      {fact.is_quasi_constant && (
+                        <span
+                          className="ml-1.5 px-1 py-0.5 rounded border text-[9px] text-amber-400 bg-amber-500/10 border-amber-500/20"
+                          title={`One value fills ${fact.dominant_value_pct ?? 99}% of rows (rule R-FLT-04, advisory)`}
+                        >
+                          quasi-constant
+                        </span>
+                      )}
+                    </td>
                     <td className={`py-1.5 px-3 tabular-nums ${fact.missing_pct > 0 ? 'text-amber-400' : 'text-zinc-500'}`}>
                       {fact.missing_pct}%
                       <span className="text-zinc-600 ml-1">({fact.missing_count})</span>

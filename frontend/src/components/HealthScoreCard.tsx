@@ -1,5 +1,5 @@
 import React from 'react';
-import { AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Info } from 'lucide-react';
 import type { HealthScore, DatasetSummary } from '../types';
 
 interface HealthScoreCardProps {
@@ -95,6 +95,15 @@ export const HealthScoreCard: React.FC<HealthScoreCardProps> = ({ health, summar
           <div className="inline-flex items-center gap-1.5 text-[11px] text-emerald-400">
             <CheckCircle2 className="w-3.5 h-3.5" />
             No critical issues
+          </div>
+        )}
+        {(health.repairs_applied ?? 0) > 0 && (
+          <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-zinc-400">
+            <Info className="w-3 h-3 shrink-0" />
+            <span>
+              {health.repairs_applied} data-quality {health.repairs_applied === 1 ? 'repair' : 'repairs'} applied
+              {' — '}see Data Repairs
+            </span>
           </div>
         )}
       </div>

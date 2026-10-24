@@ -3,12 +3,7 @@ import {
   SlidersHorizontal,
   RotateCcw,
   Play,
-  Trash2,
-  Sparkles,
-  ShieldCheck,
   Search,
-  Filter,
-  Check,
 } from 'lucide-react';
 import type {
   ColumnRecommendation,
@@ -18,12 +13,14 @@ import type {
   CleaningReport,
 } from '../types';
 import { executePreprocessing } from '../services/api';
+import { TargetNote } from './TargetNote';
 
 interface RecipeCustomizerProps {
   recommendations: Record<string, ColumnRecommendation>;
   columnFacts: Record<string, ColumnFact>;
   customRecipe: Record<string, RecipeOverride>;
   onRecipeChange: (newRecipe: Record<string, RecipeOverride>) => void;
+  targetColumn?: string | null;
   onRunSuccess?: (report: CleaningReport) => void;
 }
 
@@ -34,6 +31,7 @@ export const RecipeCustomizer: React.FC<RecipeCustomizerProps> = ({
   columnFacts,
   customRecipe,
   onRecipeChange,
+  targetColumn = null,
   onRunSuccess,
 }) => {
   const [filter, setFilter] = useState<FilterTab>('ALL');
@@ -93,6 +91,7 @@ export const RecipeCustomizer: React.FC<RecipeCustomizerProps> = ({
       const payload: ProcessRequest = {
         column_overrides: customRecipe,
         drop_duplicates: true,
+        ...(targetColumn && { target_column: targetColumn }),
       };
       const report = await executePreprocessing(payload);
       if (onRunSuccess) {
@@ -156,6 +155,8 @@ export const RecipeCustomizer: React.FC<RecipeCustomizerProps> = ({
           </button>
         </div>
       </div>
+
+      <TargetNote target={targetColumn} />
 
       {error && (
         <div className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs font-mono">

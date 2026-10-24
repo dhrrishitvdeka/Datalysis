@@ -27,6 +27,38 @@ function getHeaders(extra?: Record<string, string>): Record<string, string> {
   return headers;
 }
 
+/** Options shared by upload and sample loading. */
+export interface LoadOptions {
+  autoRepair?: boolean; // apply the R-QLT data-quality repairs (backend default: true)
+  sheet?: string; // Excel sheet name (uploads only)
+}
+
+/** Builds "?auto_repair=...&sheet=..." from the options, or "" when none are set. */
+function loadQuery(opts?: LoadOptions): string {
+  const params = new URLSearchParams();
+  if (opts?.autoRepair !== undefined) params.set('auto_repair', String(opts.autoRepair));
+  if (opts?.sheet) params.set('sheet', opts.sheet);
+  const qs = params.toString();
+  return qs ? `?${qs}` : '';
+}
+
+/**
+ * Reads the backend's error message. FastAPI sends {"detail": "text"} for
+ * HTTPException (400, 413, ...) and {"detail": [{msg: ...}]} for 422 validation errors.
+ */
+async function readError(res: Response, fallback: string): Promise<string> {
+  try {
+    const body = await res.json();
+    if (typeof body.detail === 'string') return body.detail;
+    if (Array.isArray(body.detail) && body.detail.length > 0) {
+      return body.detail.map((d: { msg?: string }) => d.msg ?? '').filter(Boolean).join('; ') || fallback;
+    }
+  } catch {
+    // body was not JSON (e.g. a proxy error page)
+  }
+  return `${fallback} (HTTP ${res.status})`;
+}
+
 export async function fetchSampleDatasets(): Promise<SampleDatasetInfo[]> {
   const res = await fetch(`${API_BASE}/sample-datasets`, {
     headers: getHeaders(),
@@ -36,15 +68,12 @@ export async function fetchSampleDatasets(): Promise<SampleDatasetInfo[]> {
   return data.samples;
 }
 
-export async function loadSampleDataset(sampleId: string): Promise<AnalysisResponse> {
-  const res = await fetch(`${API_BASE}/load-sample/${sampleId}`, {
+export async function loadSampleDataset(sampleId: string, opts?: LoadOptions): Promise<AnalysisResponse> {
+  const res = await fetch(`${API_BASE}/load-sample/${sampleId}${loadQuery(opts)}`, {
     method: 'POST',
     headers: getHeaders(),
   });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: 'Failed to load sample' }));
-    throw new Error(err.detail || 'Failed to load sample');
-  }
+  if (!res.ok) throw new Error(await readError(res, 'Failed to load sample'));
   const data: AnalysisResponse = await res.json();
   if (data.session_id) {
     currentSessionId = data.session_id;
@@ -52,20 +81,17 @@ export async function loadSampleDataset(sampleId: string): Promise<AnalysisRespo
   return data;
 }
 
-export async function uploadDatasetFile(file: File): Promise<AnalysisResponse> {
+export async function uploadDatasetFile(file: File, opts?: LoadOptions): Promise<AnalysisResponse> {
   const formData = new FormData();
   formData.append('file', file);
 
-  const res = await fetch(`${API_BASE}/upload`, {
+  const res = await fetch(`${API_BASE}/upload${loadQuery(opts)}`, {
     method: 'POST',
     headers: getHeaders(),
     body: formData,
   });
 
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: 'Failed to parse and analyze file' }));
-    throw new Error(err.detail || 'Upload failed');
-  }
+  if (!res.ok) throw new Error(await readError(res, 'Failed to parse and analyze file'));
 
   const data: AnalysisResponse = await res.json();
   if (data.session_id) {
@@ -84,10 +110,7 @@ export async function executePreprocessing(recipePayload?: ProcessRequest): Prom
   }
 
   const res = await fetch(`${API_BASE}/process`, options);
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: 'Preprocessing execution failed' }));
-    throw new Error(err.detail || 'Execution failed');
-  }
+  if (!res.ok) throw new Error(await readError(res, 'Preprocessing execution failed'));
   return res.json();
 }
 
@@ -97,10 +120,7 @@ export async function analyzeTarget(targetCol: string): Promise<TargetAnalysisRe
     method: 'POST',
     headers: getHeaders(),
   });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: 'Target analysis failed' }));
-    throw new Error(err.detail || 'Target analysis failed');
-  }
+  if (!res.ok) throw new Error(await readError(res, 'Target analysis failed'));
   return res.json();
 }
 

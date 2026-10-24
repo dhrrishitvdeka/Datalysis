@@ -13,6 +13,7 @@ import {
   Moon,
   Laptop,
   Target,
+  Wrench,
 } from 'lucide-react';
 import type { AnalysisResponse } from '../types';
 import { useTheme } from '../context/ThemeContext';
@@ -25,6 +26,7 @@ interface NavbarProps {
   onOpenTargetModal?: () => void;
   selectedTarget?: string | null;
   tabCounts?: {
+    repairs?: number;
     recommendations?: number;
     distributions?: number;
     correlations?: number;
@@ -71,6 +73,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   const navItems = [
     { id: 'overview', label: 'Overview', icon: Layers },
+    { id: 'repairs', label: 'Data Repairs', icon: Wrench, count: tabCounts?.repairs },
     { id: 'visualizer', label: 'Profiler', icon: LineChart },
     { id: 'recommendations', label: 'Recipe Customizer', icon: SlidersHorizontal, count: tabCounts?.recommendations },
     { id: 'distributions', label: 'Outliers', icon: BarChart2, count: tabCounts?.distributions },
@@ -91,7 +94,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             <div className="flex items-baseline space-x-2">
               <span className="font-semibold text-sm tracking-tight text-white">Datalysis</span>
               <span className="hidden sm:inline text-[10px] uppercase font-mono tracking-widest text-zinc-500 px-1.5 py-0.5 rounded bg-zinc-900 border border-zinc-800">
-                v1.0
+                v1.1
               </span>
             </div>
           </div>

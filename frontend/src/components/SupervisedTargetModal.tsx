@@ -4,7 +4,6 @@ import {
   AlertTriangle,
   Sparkles,
   BarChart3,
-  CheckCircle2,
   X,
   TrendingUp,
   ShieldAlert,

@@ -8,6 +8,7 @@ export interface DatasetMetadata {
   rows: number;
   columns: number;
   sheet_name?: string;
+  all_sheets?: string[] | null;
   sample_name?: string;
 }
 
@@ -19,6 +20,7 @@ export interface DatasetSummary {
   overall_missing_pct: number;
   duplicate_rows: number;
   duplicate_pct: number;
+  hidden_duplicate_rows?: number;
   memory_mb: number;
   type_counts: Record<string, number>;
   columns_with_missing: number;
@@ -72,6 +74,8 @@ export interface ColumnFact {
   is_constant: boolean;
   is_binary: boolean;
   is_identifier: boolean;
+  dominant_value_pct?: number;
+  is_quasi_constant?: boolean;
   ordinal_order: string[] | null;
   sample_values: string[];
   numeric_stats: NumericStats | null;
@@ -103,6 +107,7 @@ export interface HealthScore {
   };
   executive_diagnosis: string;
   critical_issues: string[];
+  repairs_applied?: number; // informational count of R-QLT repairs; not a critical issue
 }
 
 export interface ReasoningStep {
@@ -143,6 +148,33 @@ export interface ColumnRecommendation {
   sample_values: string[];
 }
 
+export interface RepairExample {
+  before: string;
+  after: string;
+}
+
+/** One automatic R-QLT data-quality fix applied before profiling. */
+export interface DataRepair {
+  rule_id: string;
+  rule_name: string;
+  column: string;
+  severity: 'CRITICAL' | 'WARNING' | 'INFO';
+  affected_count: number;
+  description: string;
+  examples: RepairExample[];
+  replay?: Record<string, unknown>; // parameters the generated script uses to repeat this repair
+}
+
+export interface TriggeredRuleLogEntry {
+  column: string; // "(dataset)" for dataset-level rules such as R-INT-01
+  rule_id: string;
+  rule_name: string;
+  category: string;
+  severity: string;
+  confidence: number;
+  action_type: string;
+}
+
 export interface AnalysisResponse {
   metadata: DatasetMetadata;
   facts: {
@@ -156,10 +188,12 @@ export interface AnalysisResponse {
     health_score: HealthScore;
     reasoning_trace: ReasoningStep[];
     triggered_rules_count: number;
+    triggered_rules_log?: TriggeredRuleLogEntry[];
     column_recommendations: Record<string, ColumnRecommendation>;
   };
   pipeline_code: string;
   preview: Record<string, any>[];
+  repairs?: DataRepair[];
   session_id?: string;
 }
 
@@ -191,6 +225,8 @@ export interface ProcessRequest {
   column_overrides?: Record<string, RecipeOverride>;
   drop_duplicates?: boolean;
   target_variable?: string;
+  /** Protected supervised target: never dropped/scaled/encoded, placed last. */
+  target_column?: string;
 }
 
 export interface FeatureImportance {

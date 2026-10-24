@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Navbar } from './components/Navbar';
 import { UploadZone } from './components/UploadZone';
 import { HealthScoreCard } from './components/HealthScoreCard';
@@ -12,6 +12,7 @@ import { CodeExport } from './components/CodeExport';
 import { CleanedDataPreview } from './components/CleanedDataPreview';
 import { DatasetOverview } from './components/DatasetOverview';
 import { DataVisualizer } from './components/DataVisualizer';
+import { DataRepairs } from './components/DataRepairs';
 
 import type { AnalysisResponse, SampleDatasetInfo, RecipeOverride, CleaningReport } from './types';
 import {
@@ -22,7 +23,7 @@ import {
   getPipelineDownloadUrl,
   getNotebookDownloadUrl,
 } from './services/api';
-import { FileJson, Code2, WandSparkles, BookOpen, Target, SlidersHorizontal, Table } from 'lucide-react';
+import { FileJson, Code2, WandSparkles, BookOpen, Target, SlidersHorizontal, Table, FileSpreadsheet } from 'lucide-react';
 
 export function App() {
   const [data, setData] = useState<AnalysisResponse | null>(null);
@@ -39,18 +40,26 @@ export function App() {
   const [selectedTarget, setSelectedTarget] = useState<string | null>(null);
   const [recipeViewMode, setRecipeViewMode] = useState<'customizer' | 'rules'>('customizer');
 
+  // Load options: the toggle on the upload screen, and the last uploaded file (kept so another Excel sheet can be re-loaded)
+  const [autoRepair, setAutoRepair] = useState(true);
+  const [loadedWithAutoRepair, setLoadedWithAutoRepair] = useState(true);
+  const [lastFile, setLastFile] = useState<File | null>(null);
+
   useEffect(() => {
     fetchSampleDatasets()
       .then(setSampleDatasets)
       .catch((err) => console.error('Could not load sample dataset list:', err));
   }, []);
 
-  const handleFileUpload = async (file: File) => {
+  // `sheet` is only passed when the user picks another sheet of an already uploaded Excel file
+  const handleFileUpload = async (file: File, sheet?: string) => {
     setLoading(true);
     setError(null);
     try {
-      const res = await uploadDatasetFile(file);
+      const res = await uploadDatasetFile(file, { autoRepair, sheet });
       setData(res);
+      setLastFile(file);
+      setLoadedWithAutoRepair(autoRepair);
       setInspectCol(null);
       setCustomRecipe({});
       setCleaningReport(null);
@@ -67,8 +76,10 @@ export function App() {
     setLoading(true);
     setError(null);
     try {
-      const res = await loadSampleDataset(sampleId);
+      const res = await loadSampleDataset(sampleId, { autoRepair });
       setData(res);
+      setLastFile(null);
+      setLoadedWithAutoRepair(autoRepair);
       setInspectCol(null);
       setCustomRecipe({});
       setCleaningReport(null);
@@ -83,6 +94,7 @@ export function App() {
 
   const handleReset = () => {
     setData(null);
+    setLastFile(null);
     setError(null);
     setInspectCol(null);
     setCustomRecipe({});
@@ -94,6 +106,12 @@ export function App() {
   const openColumn = (col: string, tab: string = 'visualizer') => {
     setInspectCol(col);
     setActiveTab(tab);
+  };
+
+  // A cleaning run is only valid for the target it was made with (the backend drops its copy too)
+  const handleTargetSelect = (target: string) => {
+    if (target !== selectedTarget) setCleaningReport(null);
+    setSelectedTarget(target);
   };
 
   const handleCustomRecipeRunSuccess = (report: CleaningReport) => {
@@ -109,6 +127,8 @@ export function App() {
   ).length;
   const collinearCount = data?.facts.high_correlation_pairs.length ?? 0;
   const columnList = data ? Object.keys(data.facts.columns) : [];
+  const repairs = data?.repairs ?? [];
+  const sheets = data?.metadata.all_sheets ?? [];
 
   return (
     <div className="min-h-screen amoled-bg text-zinc-100 flex flex-col selection:bg-zinc-800 selection:text-white">
@@ -120,6 +140,7 @@ export function App() {
         onOpenTargetModal={() => setTargetModalOpen(true)}
         selectedTarget={selectedTarget}
         tabCounts={{
+          repairs: repairs.length,
           recommendations: dropCount + missingCount,
           distributions: outlierCount,
           correlations: collinearCount,
@@ -145,6 +166,8 @@ export function App() {
             onSampleSelect={handleSampleSelect}
             sampleDatasets={sampleDatasets}
             isLoading={loading}
+            autoRepair={autoRepair}
+            onAutoRepairChange={setAutoRepair}
           />
         ) : (
           <div className="space-y-3">
@@ -156,6 +179,26 @@ export function App() {
               />
 
               <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+                {/* Excel sheet picker: re-uploads the same file with the chosen sheet */}
+                {lastFile && sheets.length > 1 && (
+                  <label className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-zinc-950 border border-white/[0.08] text-[11px] font-mono text-zinc-300">
+                    <FileSpreadsheet className="w-3.5 h-3.5 text-zinc-400" />
+                    <span className="text-zinc-500">Sheet</span>
+                    <select
+                      value={data.metadata.sheet_name ?? sheets[0]}
+                      disabled={loading}
+                      onChange={(e) => handleFileUpload(lastFile, e.target.value)}
+                      className="bg-zinc-950 text-zinc-200 focus:outline-none max-w-[160px] disabled:opacity-50"
+                    >
+                      {sheets.map((name) => (
+                        <option key={name} value={name}>
+                          {name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+
                 <button
                   onClick={() => setTargetModalOpen(true)}
                   className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-zinc-950 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10 text-[11px] font-mono transition"
@@ -220,6 +263,10 @@ export function App() {
                 />
               )}
 
+              {activeTab === 'repairs' && (
+                <DataRepairs repairs={repairs} autoRepairOn={loadedWithAutoRepair} />
+              )}
+
               {activeTab === 'visualizer' && (
                 <DataVisualizer
                   columnFacts={data.facts.columns}
@@ -265,6 +312,7 @@ export function App() {
                       columnFacts={data.facts.columns}
                       customRecipe={customRecipe}
                       onRecipeChange={setCustomRecipe}
+                      targetColumn={selectedTarget}
                       onRunSuccess={handleCustomRecipeRunSuccess}
                     />
                   ) : (
@@ -299,9 +347,11 @@ export function App() {
 
               {activeTab === 'cleaned' && (
                 <CleanedDataPreview
+                  key={selectedTarget ?? 'no-target'}
                   initialReport={cleaningReport}
                   rawPreview={data.preview}
                   customRecipe={customRecipe}
+                  targetColumn={selectedTarget}
                   onReportChange={setCleaningReport}
                 />
               )}
@@ -316,13 +366,13 @@ export function App() {
           columns={columnList}
           initialTarget={selectedTarget}
           onClose={() => setTargetModalOpen(false)}
-          onTargetSelect={(tgt) => setSelectedTarget(tgt)}
+          onTargetSelect={handleTargetSelect}
         />
       )}
 
       <footer className="border-t border-white/[0.04] bg-black py-2.5 text-xs text-zinc-500 font-mono">
         <div className="max-w-[1600px] mx-auto px-4 sm:px-6 flex flex-col sm:flex-row items-center justify-between gap-1 text-[11px]">
-          <span>Datalysis v1.0 • Autonomous Expert Preprocessing System</span>
+          <span>Datalysis v1.1 • Autonomous Expert Preprocessing System</span>
           <span>100% Local & Deterministic • Zero External API Dependencies</span>
         </div>
       </footer>

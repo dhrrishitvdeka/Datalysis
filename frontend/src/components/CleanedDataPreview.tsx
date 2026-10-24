@@ -3,7 +3,6 @@ import {
   Play,
   Download,
   CheckCircle2,
-  ArrowRight,
   FileCheck,
   FileSpreadsheet,
   Database,
@@ -11,7 +10,7 @@ import {
   Code2,
   ChevronDown,
 } from 'lucide-react';
-import type { CleaningReport, RecipeOverride } from '../types';
+import type { CleaningReport, ProcessRequest, RecipeOverride } from '../types';
 import {
   executePreprocessing,
   getCleanedDownloadUrl,
@@ -19,11 +18,13 @@ import {
   getSchemaDownloadUrl,
 } from '../services/api';
 import { DataDiffViewer } from './DataDiffViewer';
+import { TargetNote } from './TargetNote';
 
 interface CleanedDataPreviewProps {
   initialReport: CleaningReport | null;
   rawPreview?: Record<string, any>[];
   customRecipe?: Record<string, RecipeOverride>;
+  targetColumn?: string | null;
   onReportChange?: (report: CleaningReport) => void;
 }
 
@@ -31,6 +32,7 @@ export const CleanedDataPreview: React.FC<CleanedDataPreviewProps> = ({
   initialReport,
   rawPreview = [],
   customRecipe = {},
+  targetColumn = null,
   onReportChange,
 }) => {
   const [report, setReport] = useState<CleaningReport | null>(initialReport);
@@ -42,7 +44,15 @@ export const CleanedDataPreview: React.FC<CleanedDataPreviewProps> = ({
     setLoading(true);
     setError(null);
     try {
-      const payload = Object.keys(customRecipe).length > 0 ? { column_overrides: customRecipe } : undefined;
+      // The target lets the backend protect it; with no overrides and no target the body stays empty
+      const hasOverrides = Object.keys(customRecipe).length > 0;
+      const payload: ProcessRequest | undefined =
+        hasOverrides || targetColumn
+          ? {
+              ...(hasOverrides && { column_overrides: customRecipe }),
+              ...(targetColumn && { target_column: targetColumn }),
+            }
+          : undefined;
       const res = await executePreprocessing(payload);
       setReport(res);
       onReportChange?.(res);
@@ -170,6 +180,8 @@ export const CleanedDataPreview: React.FC<CleanedDataPreviewProps> = ({
           )}
         </div>
       </div>
+
+      <TargetNote target={targetColumn} />
 
       {error && (
         <div className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs font-mono">

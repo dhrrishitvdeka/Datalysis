@@ -7,6 +7,8 @@ interface UploadZoneProps {
   onSampleSelect: (sampleId: string) => void;
   sampleDatasets: SampleDatasetInfo[];
   isLoading: boolean;
+  autoRepair: boolean;
+  onAutoRepairChange: (value: boolean) => void;
 }
 
 export const UploadZone: React.FC<UploadZoneProps> = ({
@@ -14,6 +16,8 @@ export const UploadZone: React.FC<UploadZoneProps> = ({
   onSampleSelect,
   sampleDatasets,
   isLoading,
+  autoRepair,
+  onAutoRepairChange,
 }) => {
   const [isDragOver, setIsDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -119,8 +123,24 @@ export const UploadZone: React.FC<UploadZoneProps> = ({
         )}
       </div>
 
+      {/* Auto-repair toggle: applies to uploads and to the sample datasets below */}
+      <label className="mt-3 flex items-start gap-2.5 cursor-pointer select-none px-1">
+        <input
+          type="checkbox"
+          checked={autoRepair}
+          onChange={(e) => onAutoRepairChange(e.target.checked)}
+          disabled={isLoading}
+          className="mt-0.5 accent-emerald-500"
+        />
+        <span className="text-xs text-zinc-400 leading-relaxed">
+          <span className="font-semibold text-zinc-200">Auto-repair data quality issues</span>
+          {' '}— fixes disguised missing values (?, N/A, -999), numbers stored as text ($1,200), yes/no text and
+          inconsistent category spellings before analysis. Every fix is listed in the Data Repairs tab.
+        </span>
+      </label>
+
       {/* Feature Specs */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-4">
         <div className="p-4 rounded-xl glass-card space-y-1.5">
           <div className="flex items-center space-x-2 text-zinc-300">
             <Cpu className="w-3.5 h-3.5 text-zinc-400" />
@@ -137,7 +157,7 @@ export const UploadZone: React.FC<UploadZoneProps> = ({
             <h4 className="text-xs font-semibold uppercase tracking-wider">Imputation & Outlier Recipes</h4>
           </div>
           <p className="text-xs text-zinc-500 leading-relaxed">
-            Per-feature recommendations: median/mean, MICE multivariate, Winsorization, and power transforms.
+            Per-feature recommendations: median/mean, KNN multivariate, Winsorization, and power transforms.
           </p>
         </div>
 

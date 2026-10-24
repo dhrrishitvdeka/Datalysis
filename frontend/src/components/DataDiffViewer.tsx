@@ -1,9 +1,7 @@
 import React, { useState } from 'react';
 import {
-  Columns2,
   Sparkles,
   CheckCircle2,
-  ArrowRight,
   TrendingDown,
   Layers,
   Search,
